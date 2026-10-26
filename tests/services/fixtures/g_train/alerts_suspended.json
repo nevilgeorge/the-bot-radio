@@ -1,0 +1,802 @@
+{
+ "header": {
+  "gtfs_realtime_version": "2.0",
+  "incrementality": "FULL_DATASET",
+  "timestamp": 1793023560,
+  "transit_realtime.mercury_feed_header": {
+   "mercury_version": "1.0"
+  }
+ },
+ "entity": [
+  {
+   "id": "lmm:alert:273540:26",
+   "alert": {
+    "active_period": [
+     {
+      "start": 1793036248
+     }
+    ],
+    "informed_entity": [
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "F",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:F:26"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "M",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:M:26"
+      }
+     }
+    ],
+    "header_text": {
+     "translation": [
+      {
+       "text": "Downtown [F][M] trains are running with delays while we address a signal problem near 47-50 Sts-Rockefeller Ctr.",
+       "language": "en"
+      }
+     ]
+    },
+    "description_text": {
+     "translation": [
+      {
+       "text": "Some Coney Island-bound [F] trains are running via the [G] line from Court Sq to Bergen St, bypassing Manhattan.\nSome Metropolitan Av-bound [M] trains are running via Court Sq-23 St from 36 St to 47-50 Sts-Rockefeller Ctr.\n\nListen to announcements to hear how your train will run.",
+       "language": "en"
+      }
+     ]
+    },
+    "transit_realtime.mercury_alert": {
+     "created_at": 1793036248,
+     "updated_at": 1793038529,
+     "alert_type": "Delays",
+     "display_before_active": 0
+    }
+   }
+  },
+  {
+   "id": "lmm:alert:273601:26",
+   "alert": {
+    "active_period": [
+     {
+      "start": 1793023200
+     }
+    ],
+    "informed_entity": [
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:26"
+      }
+     }
+    ],
+    "header_text": {
+     "translation": [
+      {
+       "text": "[G] trains are suspended in both directions between Court Sq and Hoyts-Schermerhorn Sts while we address a signal problem at Greenpoint Av.",
+       "language": "en"
+      }
+     ]
+    },
+    "transit_realtime.mercury_alert": {
+     "created_at": 1793023200,
+     "updated_at": 1793023500,
+     "alert_type": "Suspended",
+     "display_before_active": 0
+    },
+    "description_text": {
+     "translation": [
+      {
+       "language": "en",
+       "text": "For service, take the [7] at Court Sq, the [L] at Metropolitan Av or the [A][C] at Hoyts-Schermerhorn Sts.\nWhat's happening?\nWe're fixing a signal problem."
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "lmm:planned_work:35911",
+   "alert": {
+    "active_period": [
+     {
+      "start": 1794925800,
+      "end": 1794947400
+     },
+     {
+      "start": 1795012200,
+      "end": 1795033800
+     },
+     {
+      "start": 1795098600,
+      "end": 1795120200
+     },
+     {
+      "start": 1795185000,
+      "end": 1795206600
+     }
+    ],
+    "informed_entity": [
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "F",
+      "stop_id": "F23",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:F:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "F",
+      "stop_id": "F25",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:F:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F23",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F25",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     }
+    ],
+    "header_text": {
+     "translation": [
+      {
+       "text": "In Brooklyn, some Coney Island-bound [F] and some Church Av-bound [G] trains will skip 4 Av/9 St, 15 St-Prospect Park, and Fort Hamilton Pkwy",
+       "language": "en"
+      }
+     ]
+    },
+    "description_text": {
+     "translation": [
+      {
+       "text": "Some Coney Island-bound [F] trains and some Church Av-bound [G] trains will continue to serve these stops.\n\nListen to announcements to hear how your train will run.\n\nIf your stop is skipped, take a Manhattan-bound [F] or Court Sq-bound [G] train.\n\nWhat's happening?\nWe're replacing tracks",
+       "language": "en"
+      }
+     ]
+    },
+    "transit_realtime.mercury_alert": {
+     "created_at": 1792587367,
+     "updated_at": 1792610967,
+     "alert_type": "Planned - Stops Skipped",
+     "display_before_active": 3600,
+     "human_readable_active_period": {
+      "translation": [
+       {
+        "text": "Nov 17 - 20, Tue to Fri, 9:30 AM to 3:30 PM",
+        "language": "en"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "lmm:planned_work:35870",
+   "alert": {
+    "active_period": [
+     {
+      "start": 1793673900,
+      "end": 1793700000
+     },
+     {
+      "start": 1793760300,
+      "end": 1793786400
+     },
+     {
+      "start": 1793846700,
+      "end": 1793872800
+     },
+     {
+      "start": 1793933100,
+      "end": 1793959200
+     }
+    ],
+    "informed_entity": [
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "G22",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:20"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "G24",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:20"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "G26",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:20"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "G28",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:20"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "G29",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:20"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "G30",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:20"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "G31",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:20"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "G32",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:20"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "G33",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:20"
+      }
+     }
+    ],
+    "header_text": {
+     "translation": [
+      {
+       "text": "No [G] between Bedford-Nostrand Avs and Court Sq",
+       "language": "en"
+      }
+     ]
+    },
+    "description_text": {
+     "translation": [
+      {
+       "text": "[G] runs between Church Av and Bedford-Nostrand Avs, the last stop.\n\n[shuttle bus icon] Free T403 shuttle buses make stops between Bedford-Nostrand Avs and Court Sq.\nTransfer between [G] and [shuttle bus icon] at Bedford-Nostrand Avs.\nWhat's happening?\nStructural maintenance\n\n[accessibility icon] This service change affects one or more ADA accessible stations and these travel alternatives may not be fully accessible. Please contact 511 to plan your trip.",
+       "language": "en"
+      }
+     ]
+    },
+    "transit_realtime.mercury_alert": {
+     "created_at": 1792513669,
+     "updated_at": 1792523406,
+     "alert_type": "Planned - Part Suspended",
+     "display_before_active": 3600,
+     "human_readable_active_period": {
+      "translation": [
+       {
+        "text": "Nov 2 - 6, Mon to Fri, 9:45 PM to 5:00 AM",
+        "language": "en"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "lmm:planned_work:35774",
+   "alert": {
+    "active_period": [
+     {
+      "start": 1795229100,
+      "end": 1795428012
+     }
+    ],
+    "informed_entity": [
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F23",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F24",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F25",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F26",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F27",
+      "direction_id": 0,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F22",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F29",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F30",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F31",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F32",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F33",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F34",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F35",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F36",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F38",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F39",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     }
+    ],
+    "header_text": {
+     "translation": [
+      {
+       "text": "In Brooklyn, [G] skips 4 Av-9 St, 15 St-Prospect Park and Fort Hamilton Pkwy in both directions - take the [F] instead",
+       "language": "en"
+      }
+     ]
+    },
+    "description_text": {
+     "translation": [
+      {
+       "text": "Transfer at Smith-9 Sts, 7 Av, or Church Av\nWhat's happening?\nWe're making communications improvements",
+       "language": "en"
+      }
+     ]
+    },
+    "transit_realtime.mercury_alert": {
+     "created_at": 1792156883,
+     "updated_at": 1792611446,
+     "alert_type": "Planned - Stops Skipped",
+     "display_before_active": 3600,
+     "human_readable_active_period": {
+      "translation": [
+       {
+        "text": "Nov 20 - 23, Fri 9:45 PM to Mon 5:00 AM",
+        "language": "en"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "lmm:planned_work:35558",
+   "alert": {
+    "active_period": [
+     {
+      "start": 1794624300,
+      "end": 1794823200
+     }
+    ],
+    "informed_entity": [
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F23",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F25",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F26",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     }
+    ],
+    "header_text": {
+     "translation": [
+      {
+       "text": "In Brooklyn, Church Av-bound [G] skips 4 Av-9 St, 15 St-Prospect Park and Fort Hamilton Pkwy",
+       "language": "en"
+      }
+     ]
+    },
+    "description_text": {
+     "translation": [
+      {
+       "text": "For service to these stations, take the [G] to 7 Av or Church Av and transfer to a Manhattan-bound [F] or Court Sq-bound [G].\n\nFor service from these stations, take the [F] or [G] to 7 Av or Smith-9 Sts and transfer to a Church Av-bound [G].\n\nWhat's happening?\nWe're making communications improvements",
+       "language": "en"
+      }
+     ]
+    },
+    "transit_realtime.mercury_alert": {
+     "created_at": 1791482611,
+     "updated_at": 1791903865,
+     "alert_type": "Planned - Stops Skipped",
+     "display_before_active": 3600,
+     "human_readable_active_period": {
+      "translation": [
+       {
+        "text": "Nov 13 - 16, Fri 9:45 PM to Mon 5:00 AM",
+        "language": "en"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "lmm:planned_work:35527",
+   "alert": {
+    "active_period": [
+     {
+      "start": 1794282300,
+      "end": 1794304800
+     },
+     {
+      "start": 1794368700,
+      "end": 1794391200
+     },
+     {
+      "start": 1794455100,
+      "end": 1794477600
+     },
+     {
+      "start": 1794541500,
+      "end": 1794564000
+     }
+    ],
+    "informed_entity": [
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "F",
+      "stop_id": "F23",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:F:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "F",
+      "stop_id": "F25",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:F:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "F",
+      "stop_id": "F26",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:F:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F23",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F25",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F26",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     }
+    ],
+    "header_text": {
+     "translation": [
+      {
+       "text": "In Brooklyn, Coney Island-bound [F] and Church Av-bound [G] skip 4 Av-9 St, 15 St-Prospect Park and Fort Hamilton Pkwy",
+       "language": "en"
+      }
+     ]
+    },
+    "description_text": {
+     "translation": [
+      {
+       "text": "For service to these stations, take the [F] or [G] to 7 Av or Church Av and transfer to a Manhattan-bound [F] or Bedford-Nostrand Avs-bound [G].\n\nFor service from these stations, take the [F] or [G] to 7 Av or Smith-9 Sts and transfer to a Coney Island-bound [F] or Church Av-bound [G].\n\nNote: No [G] between Bedford-Nostrand Avs and Court Sq during this time.\n\nWhat's happening?\nWe're replacing tracks",
+       "language": "en"
+      }
+     ]
+    },
+    "transit_realtime.mercury_alert": {
+     "created_at": 1791469057,
+     "updated_at": 1791900733,
+     "alert_type": "Planned - Stops Skipped",
+     "display_before_active": 3600,
+     "human_readable_active_period": {
+      "translation": [
+       {
+        "text": "Nov 9 - 13, Mon to Fri, 10:45 PM to 5:00 AM",
+        "language": "en"
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "lmm:planned_work:35086",
+   "alert": {
+    "active_period": [
+     {
+      "start": 1793065500,
+      "end": 1793091600
+     },
+     {
+      "start": 1793151900,
+      "end": 1793178000
+     },
+     {
+      "start": 1793238300,
+      "end": 1793264400
+     },
+     {
+      "start": 1793324700,
+      "end": 1793350800
+     },
+     {
+      "start": 1793673900,
+      "end": 1793700000
+     },
+     {
+      "start": 1793760300,
+      "end": 1793786400
+     },
+     {
+      "start": 1793846700,
+      "end": 1793872800
+     },
+     {
+      "start": 1793933100,
+      "end": 1793959200
+     }
+    ],
+    "informed_entity": [
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F23",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F24",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F25",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F26",
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F27",
+      "direction_id": 0,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     },
+     {
+      "agency_id": "MTASBWY",
+      "route_id": "G",
+      "stop_id": "F22",
+      "direction_id": 1,
+      "transit_realtime.mercury_entity_selector": {
+       "sort_order": "MTASBWY:G:16"
+      }
+     }
+    ],
+    "header_text": {
+     "translation": [
+      {
+       "text": "In Brooklyn, [G] skips 4 Av-9 St, 15 St-Prospect Park and Fort Hamilton Pkwy in both directions - take the [F] instead",
+       "language": "en"
+      }
+     ]
+    },
+    "description_text": {
+     "translation": [
+      {
+       "text": "Transfer at Smith-9 Sts, 7 Av, or Church Av\nWhat's happening?\nWe're making electrical improvements",
+       "language": "en"
+      }
+     ]
+    },
+    "transit_realtime.mercury_alert": {
+     "created_at": 1790279026,
+     "updated_at": 1791293881,
+     "alert_type": "Planned - Stops Skipped",
+     "display_before_active": 3600,
+     "human_readable_active_period": {
+      "translation": [
+       {
+        "text": "Oct 26 - 30 and Nov 2 - 6, Mon to Fri, 9:45 PM to 5:00 AM",
+        "language": "en"
+       }
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

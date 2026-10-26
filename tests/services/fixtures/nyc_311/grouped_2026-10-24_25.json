@@ -1,0 +1,152 @@
+[
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Illegal Parking",
+  "n": "39"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Noise - Residential",
+  "n": "20"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Noise - Street/Sidewalk",
+  "n": "19"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Animal in a Park",
+  "n": "7"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Noise - Commercial",
+  "n": "7"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "HEAT/HOT WATER",
+  "n": "5"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Blocked Driveway",
+  "n": "3"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Residential Disposal Complaint",
+  "n": "2"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Dirty Condition",
+  "n": "2"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Homeless Person Assistance",
+  "n": "2"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Food Establishment",
+  "n": "2"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Traffic Signal Condition",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Abandoned Vehicle",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Building/Use",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Emergency Response Team (ERT)",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "For Hire Vehicle Complaint",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "General Construction/Plumbing",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Missed Collection",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Noise - Park",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Outdoor Dining",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Sidewalk Condition",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Smoking or Vaping",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-24T00:00:00.000",
+  "complaint_type": "Street Condition",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-25T00:00:00.000",
+  "complaint_type": "Noise - Residential",
+  "n": "9"
+ },
+ {
+  "day": "2026-10-25T00:00:00.000",
+  "complaint_type": "Noise - Vehicle",
+  "n": "2"
+ },
+ {
+  "day": "2026-10-25T00:00:00.000",
+  "complaint_type": "Homeless Person Assistance",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-25T00:00:00.000",
+  "complaint_type": "Rodent",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-25T00:00:00.000",
+  "complaint_type": "Street Condition",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-25T00:00:00.000",
+  "complaint_type": "Noise - Street/Sidewalk",
+  "n": "1"
+ },
+ {
+  "day": "2026-10-25T00:00:00.000",
+  "complaint_type": "Noise",
+  "n": "1"
+ }
+]

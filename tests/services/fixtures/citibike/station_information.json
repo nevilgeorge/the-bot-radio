@@ -1,0 +1,353 @@
+{
+  "last_updated": 1793040078,
+  "ttl": 60,
+  "version": "2.3",
+  "data": {
+    "stations": [
+      {
+        "station_id": "bfe5e69d-89ff-48b3-bf20-80cbdfa443e0",
+        "name": "India St Pier",
+        "short_name": "5794.05",
+        "lat": 40.731734785883454,
+        "lon": -73.9612390102593,
+        "capacity": 54
+      },
+      {
+        "station_id": "66dd217d-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Franklin St & Dupont St",
+        "short_name": "5944.01",
+        "lat": 40.73564,
+        "lon": -73.95866,
+        "capacity": 27
+      },
+      {
+        "station_id": "1814548067447122618",
+        "name": "Calyer St & West St",
+        "short_name": "5676.04",
+        "lat": 40.72693,
+        "lon": -73.95863,
+        "capacity": 35
+      },
+      {
+        "station_id": "66dd2060-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "India St & Manhattan Ave",
+        "short_name": "5826.02",
+        "lat": 40.73232194,
+        "lon": -73.9550858,
+        "capacity": 50
+      },
+      {
+        "station_id": "66de73fd-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Richardson St & N Henry St",
+        "short_name": "5433.03",
+        "lat": 40.71907891179564,
+        "lon": -73.94223690032959,
+        "capacity": 25
+      },
+      {
+        "station_id": "66dd1d0f-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Banker St & Meserole Ave",
+        "short_name": "5633.04",
+        "lat": 40.72606,
+        "lon": -73.95621,
+        "capacity": 31
+      },
+      {
+        "station_id": "66dd1c7f-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Nassau Ave & Russell St",
+        "short_name": "5581.01",
+        "lat": 40.72557,
+        "lon": -73.94434,
+        "capacity": 51
+      },
+      {
+        "station_id": "457ea5d7-d643-4028-87db-46dee0b81555",
+        "name": "Kingsland Ave & Nassau Ave",
+        "short_name": "5613.04",
+        "lat": 40.72577,
+        "lon": -73.94173,
+        "capacity": 39
+      },
+      {
+        "station_id": "66dd1f44-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Greenpoint Ave & Manhattan Ave",
+        "short_name": "5785.05",
+        "lat": 40.73026,
+        "lon": -73.95394,
+        "capacity": 27
+      },
+      {
+        "station_id": "66dd17a5-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Nassau Ave & Newell St",
+        "short_name": "5623.03",
+        "lat": 40.724812564400175,
+        "lon": -73.94752621650696,
+        "capacity": 51
+      },
+      {
+        "station_id": "1786700154621508184",
+        "name": "N Henry St & Norman Ave",
+        "short_name": "5656.03",
+        "lat": 40.7277,
+        "lon": -73.94395,
+        "capacity": 29
+      },
+      {
+        "station_id": "66dd1d9c-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Meserole Ave & Manhattan Ave",
+        "short_name": "5666.04",
+        "lat": 40.72708584,
+        "lon": -73.95299117,
+        "capacity": 28
+      },
+      {
+        "station_id": "63a838a8-9acf-4ba1-91f5-c676f6ef2f7d",
+        "name": "Green St & McGuinness Blvd",
+        "short_name": "5860.02",
+        "lat": 40.73396,
+        "lon": -73.95204,
+        "capacity": 20
+      },
+      {
+        "station_id": "7a771842-c090-4da1-8c13-72b7f4f50a87",
+        "name": "Leonard St & Nassau Ave",
+        "short_name": "5550.09",
+        "lat": 40.7239567849954,
+        "lon": -73.94984364509583,
+        "capacity": 36
+      },
+      {
+        "station_id": "1786687245202023014",
+        "name": "Greenpoint Ave & West St",
+        "short_name": "5752.09",
+        "lat": 40.729803,
+        "lon": -73.959099,
+        "capacity": 35
+      },
+      {
+        "station_id": "bd30f2a1-38ec-474d-9e36-07f688e87427",
+        "name": "Manhattan Ave & Leonard St",
+        "short_name": "5442.09",
+        "lat": 40.72084,
+        "lon": -73.94844,
+        "capacity": 18
+      },
+      {
+        "station_id": "1786699974232881542",
+        "name": "Greenpoint Ave & Monitor St",
+        "short_name": "5851.01",
+        "lat": 40.73224,
+        "lon": -73.94383,
+        "capacity": 20
+      },
+      {
+        "station_id": "66dd20eb-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Huron St & Franklin St",
+        "short_name": "5869.04",
+        "lat": 40.73266,
+        "lon": -73.95826,
+        "capacity": 35
+      },
+      {
+        "station_id": "a958a8af-a0cc-4bca-9114-93c74ce3c693",
+        "name": "Frost St & Debevoise Ave",
+        "short_name": "5433.04",
+        "lat": 40.71882,
+        "lon": -73.93948,
+        "capacity": 22
+      },
+      {
+        "station_id": "66dd18dd-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Driggs Ave & Lorimer St",
+        "short_name": "5481.04",
+        "lat": 40.72179134,
+        "lon": -73.9504154,
+        "capacity": 27
+      },
+      {
+        "station_id": "2263856049466289632",
+        "name": "Clay St & Commercial St",
+        "short_name": "5944.07",
+        "lat": 40.736269,
+        "lon": -73.958179,
+        "capacity": 0
+      },
+      {
+        "station_id": "66dd2208-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "McGuinness Blvd & Eagle St",
+        "short_name": "5977.01",
+        "lat": 40.73555,
+        "lon": -73.95284,
+        "capacity": 42
+      },
+      {
+        "station_id": "2252359266241952490",
+        "name": "Manhattan Ave & Commercial St",
+        "short_name": "6019.08",
+        "lat": 40.7379962694701,
+        "lon": -73.95565918338755,
+        "capacity": 31
+      },
+      {
+        "station_id": "66dd0808-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Graham Ave & Herbert St",
+        "short_name": "5403.05",
+        "lat": 40.71929301,
+        "lon": -73.94500379,
+        "capacity": 26
+      },
+      {
+        "station_id": "1786696384892428996",
+        "name": "Monitor St & Meeker Ave",
+        "short_name": "5473.06",
+        "lat": 40.721226,
+        "lon": -73.941845,
+        "capacity": 21
+      },
+      {
+        "station_id": "74feba30-26a5-4949-b3a0-d6e13ba1a20c",
+        "name": "Engert Ave & McGuinness Blvd",
+        "short_name": "5473.03",
+        "lat": 40.72158,
+        "lon": -73.94546,
+        "capacity": 19
+      },
+      {
+        "station_id": "66dd1846-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "N 12 St & Bedford Ave",
+        "short_name": "5450.04",
+        "lat": 40.72079821,
+        "lon": -73.95484712,
+        "capacity": 47
+      },
+      {
+        "station_id": "1786375069262703476",
+        "name": "Norman Ave & Leonard St",
+        "short_name": "5666.11",
+        "lat": 40.725819,
+        "lon": -73.950815,
+        "capacity": 31
+      },
+      {
+        "station_id": "2263854882319069738",
+        "name": "West St & Freeman St",
+        "short_name": "5869.08",
+        "lat": 40.733806,
+        "lon": -73.959851,
+        "capacity": 0
+      },
+      {
+        "station_id": "dba67615-a7e0-4c44-ab1b-b464033ec9b9",
+        "name": "Lorimer St & Calyer St",
+        "short_name": "5709.04",
+        "lat": 40.72795,
+        "lon": -73.95414,
+        "capacity": 20
+      },
+      {
+        "station_id": "66dd1ad8-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "N 15 St & Wythe Ave",
+        "short_name": "5520.09",
+        "lat": 40.724055,
+        "lon": -73.955736,
+        "capacity": 54
+      },
+      {
+        "station_id": "344064f8-e82f-40fb-b235-aff506b77ae5",
+        "name": "Morgan Ave & Lombardy St",
+        "short_name": "5503.01",
+        "lat": 40.72226,
+        "lon": -73.93889,
+        "capacity": 30
+      },
+      {
+        "station_id": "66dea4bf-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Bayard St & Leonard St",
+        "short_name": "5442.05",
+        "lat": 40.71915571696044,
+        "lon": -73.94885390996933,
+        "capacity": 43
+      },
+      {
+        "station_id": "1786696251091417274",
+        "name": "Eagle St & Manhattan Ave",
+        "short_name": "5902.07",
+        "lat": 40.735217,
+        "lon": -73.954926,
+        "capacity": 35
+      },
+      {
+        "station_id": "66dd1b65-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Driggs Ave & N Henry St",
+        "short_name": "5542.04",
+        "lat": 40.72325,
+        "lon": -73.94308,
+        "capacity": 51
+      },
+      {
+        "station_id": "c3b255d8-b690-4825-b1e9-a1d1680e5542",
+        "name": "Kent St & McGuinness Blvd",
+        "short_name": "5785.10",
+        "lat": 40.73124,
+        "lon": -73.95161,
+        "capacity": 20
+      },
+      {
+        "station_id": "66dd1bf3-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Bedford Ave & Nassau Ave",
+        "short_name": "5550.05",
+        "lat": 40.72311651,
+        "lon": -73.95212324,
+        "capacity": 49
+      },
+      {
+        "station_id": "606c7384-75e9-4988-858a-07b88b3a9413",
+        "name": "Calyer St & Jewel St",
+        "short_name": "5743.02",
+        "lat": 40.72984,
+        "lon": -73.94839,
+        "capacity": 40
+      },
+      {
+        "station_id": "1808184356986544410",
+        "name": "Van Dam St & Meeker Ave",
+        "short_name": "5572.07",
+        "lat": 40.72532,
+        "lon": -73.9368,
+        "capacity": 31
+      },
+      {
+        "station_id": "66dd1eb2-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Milton St & Franklin St",
+        "short_name": "5752.07",
+        "lat": 40.72906,
+        "lon": -73.95779,
+        "capacity": 33
+      },
+      {
+        "station_id": "66dc120f-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "W 21 St & 6 Ave",
+        "short_name": "6140.05",
+        "lat": 40.74173969,
+        "lon": -73.99415556,
+        "capacity": 74
+      },
+      {
+        "station_id": "66dd039b-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "N 6 St & Bedford Ave",
+        "short_name": "5379.10",
+        "lat": 40.71745169,
+        "lon": -73.95850939,
+        "capacity": 48
+      },
+      {
+        "station_id": "66db6387-0aca-11e7-82f6-3863bb44ef7c",
+        "name": "Broadway & E 14 St",
+        "short_name": "5905.12",
+        "lat": 40.73454567,
+        "lon": -73.99074142,
+        "capacity": 114
+      }
+    ]
+  }
+}

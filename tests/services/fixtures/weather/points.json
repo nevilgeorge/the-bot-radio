@@ -1,0 +1,20 @@
+{
+  "id": "https://api.weather.gov/points/40.7295,-73.954",
+  "type": "Feature",
+  "properties": {
+    "gridId": "OKX",
+    "gridX": 35,
+    "gridY": 43,
+    "forecast": "https://api.weather.gov/gridpoints/OKX/35,43/forecast",
+    "forecastHourly": "https://api.weather.gov/gridpoints/OKX/35,43/forecast/hourly",
+    "forecastGridData": "https://api.weather.gov/gridpoints/OKX/35,43",
+    "observationStations": "https://api.weather.gov/gridpoints/OKX/35,43/stations",
+    "relativeLocation": {
+      "properties": {
+        "city": "New York",
+        "state": "NY"
+      }
+    },
+    "timeZone": "America/New_York"
+  }
+}
