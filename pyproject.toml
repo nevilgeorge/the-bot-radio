@@ -8,9 +8,11 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "anthropic>=2.3.0",
     "astral>=3.2",
     "fastapi[standard]>=0.162.0",
     "httpx>=0.28.1",
+    "python-dotenv>=1.2.4",
 ]
 
 [project.scripts]

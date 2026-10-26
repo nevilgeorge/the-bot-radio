@@ -3,8 +3,13 @@ from datetime import time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from dotenv import load_dotenv
+
 WEB_DIR = Path(__file__).resolve().parent
 REPO_ROOT = WEB_DIR.parents[2]
+
+# Local secrets (see .env.example). Variables already set in the shell win.
+load_dotenv(REPO_ROOT / ".env")
 
 DATA_DIR = Path(os.environ.get("BOT_RADIO_DATA_DIR", REPO_ROOT / "data"))
 TEMPLATES_DIR = WEB_DIR / "templates"

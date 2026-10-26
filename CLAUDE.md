@@ -11,6 +11,11 @@
 - Weekday/date labels are always derived from dates (`web/view_helpers.py`), never hard-coded in templates or data.
 - Page CSS lives in the single `static/css/site.css` (tokens on `:root`, dark only). Templates use Jinja macros from `templates/partials/`; derived values come from `view_helpers` (exposed to templates as `h`).
 
+## LLM requests
+
+- Every call to Claude lives in `src/the_bot_radio/services/claude_service.py` (`ClaudeService`, one method per request type). Prompts are module constants there. Credentials come from `ANTHROPIC_API_KEY` (or an `ant auth login` profile).
+- Tests inject a fake client into `ClaudeService(...)`; respx can't intercept the Anthropic SDK's HTTP layer.
+
 ## Input services (`src/the_bot_radio/services/inputs/`)
 
 - One module per input, a class with `key`/`label` ClassVars and `async fetch(ctx) -> Reading`, registered in `SERVICES` (display order) in `__init__.py`.
