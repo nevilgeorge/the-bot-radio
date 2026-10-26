@@ -16,6 +16,12 @@
 - Every call to Claude lives in `src/the_bot_radio/services/claude_service.py` (`ClaudeService`, one method per request type). Prompts are module constants there. Credentials come from `ANTHROPIC_API_KEY` (or an `ant auth login` profile).
 - Tests inject a fake client into `ClaudeService(...)`; respx can't intercept the Anthropic SDK's HTTP layer.
 
+## Spotify requests
+
+- Every Spotify Web API call lives in `src/the_bot_radio/services/spotify_service.py` (`SpotifyService`, a thin httpx client; no SDK). It uses the Feb 2026 Dev Mode endpoints: `POST /me/playlists`, `/playlists/{id}/items` (`items.items[].item`), search `limit` ≤ 10.
+- Credentials: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN` (from `scripts/spotify_auth.py`). Quirks are in `docs/spotify.md`.
+- Tests mock HTTP with respx; fixtures in `tests/services/fixtures/spotify/` are trimmed real responses.
+
 ## Input services (`src/the_bot_radio/services/inputs/`)
 
 - One module per input, a class with `key`/`label` ClassVars and `async fetch(ctx) -> Reading`, registered in `SERVICES` (display order) in `__init__.py`.

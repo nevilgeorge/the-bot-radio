@@ -20,11 +20,14 @@ MAX_TOKENS = 16000
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
 MOOD_SYSTEM_PROMPT = """\
-You set the musical mood for The Bot Radio, a daily playlist for Greenpoint, Brooklyn.
+You set the musical mood for The Bot Radio, a daily playlist generated using different inputs
+reladted to Greenpoint, Brooklyn.
 
 You'll get today's readings of the neighborhood as JSON: things like the weather, the G train, \
 sunset, the Newtown Creek tide, Citi Bike availability, yesterday's 311 complaints, the day of \
-the week, and today's resident DJ. Turn them into four scores for today's playlist:
+the week, and today's resident DJ.
+
+Use these to generate a "mood" for songs for the playlist. Mood consistst of four scores:
 
 - tempo_bpm: the playlist's average BPM, from 60 to 160. A rainy Sunday is around 75; a bright, \
 busy Friday is around 120.

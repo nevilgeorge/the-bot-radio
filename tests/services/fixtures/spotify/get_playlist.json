@@ -1,0 +1,244 @@
+{
+  "collaborative": false,
+  "description": "Live test playlist; safe to delete.",
+  "external_urls": {
+    "spotify": "https://open.spotify.com/playlist/68myIK5iHfVCVcTxSdaXJJ"
+  },
+  "followers": {
+    "href": null,
+    "total": 0
+  },
+  "href": "https://api.spotify.com/v1/playlists/68myIK5iHfVCVcTxSdaXJJ",
+  "id": "68myIK5iHfVCVcTxSdaXJJ",
+  "name": "The Bot Radio — test",
+  "owner": {
+    "display_name": "nev",
+    "external_urls": {
+      "spotify": "https://open.spotify.com/user/1250496669"
+    },
+    "href": "https://api.spotify.com/v1/users/1250496669",
+    "id": "1250496669",
+    "type": "user",
+    "uri": "spotify:user:1250496669"
+  },
+  "primary_color": null,
+  "public": true,
+  "snapshot_id": "AAAAA5ng6Cn5P1r05DZoutPYzXJnyE/l",
+  "items": {
+    "href": "https://api.spotify.com/v1/playlists/68myIK5iHfVCVcTxSdaXJJ/items?offset=0&limit=100",
+    "items": [
+      {
+        "added_at": "2026-10-26T19:31:44Z",
+        "added_by": {
+          "external_urls": {
+            "spotify": "https://open.spotify.com/user/1250496669"
+          },
+          "href": "https://api.spotify.com/v1/users/1250496669",
+          "id": "1250496669",
+          "type": "user",
+          "uri": "spotify:user:1250496669"
+        },
+        "is_local": false,
+        "primary_color": null,
+        "item": {
+          "is_playable": true,
+          "explicit": false,
+          "type": "track",
+          "episode": false,
+          "track": true,
+          "album": {
+            "is_playable": true,
+            "type": "album",
+            "album_type": "album",
+            "href": "https://api.spotify.com/v1/albums/49MNmJhZQewjt06rpwp6QR",
+            "id": "49MNmJhZQewjt06rpwp6QR",
+            "name": "Mezzanine",
+            "release_date": "1998-01-01",
+            "release_date_precision": "day",
+            "uri": "spotify:album:49MNmJhZQewjt06rpwp6QR",
+            "external_urls": {
+              "spotify": "https://open.spotify.com/album/49MNmJhZQewjt06rpwp6QR"
+            },
+            "total_tracks": 11
+          },
+          "artists": [
+            {
+              "external_urls": {
+                "spotify": "https://open.spotify.com/artist/6FXMGgJwohJLUSr5nVlf9X"
+              },
+              "href": "https://api.spotify.com/v1/artists/6FXMGgJwohJLUSr5nVlf9X",
+              "id": "6FXMGgJwohJLUSr5nVlf9X",
+              "name": "Massive Attack",
+              "type": "artist",
+              "uri": "spotify:artist:6FXMGgJwohJLUSr5nVlf9X"
+            },
+            {
+              "external_urls": {
+                "spotify": "https://open.spotify.com/artist/791Z3924aa619hZ3xsOJEx"
+              },
+              "href": "https://api.spotify.com/v1/artists/791Z3924aa619hZ3xsOJEx",
+              "id": "791Z3924aa619hZ3xsOJEx",
+              "name": "Elizabeth Fraser",
+              "type": "artist",
+              "uri": "spotify:artist:791Z3924aa619hZ3xsOJEx"
+            }
+          ],
+          "disc_number": 1,
+          "track_number": 3,
+          "duration_ms": 330773,
+          "external_ids": {
+            "isrc": "GBAAA9800322"
+          },
+          "external_urls": {
+            "spotify": "https://open.spotify.com/track/67Hna13dNDkZvBpTXRIaOJ"
+          },
+          "href": "https://api.spotify.com/v1/tracks/67Hna13dNDkZvBpTXRIaOJ",
+          "id": "67Hna13dNDkZvBpTXRIaOJ",
+          "name": "Teardrop",
+          "uri": "spotify:track:67Hna13dNDkZvBpTXRIaOJ",
+          "is_local": false
+        },
+        "video_thumbnail": {
+          "url": null
+        }
+      },
+      {
+        "added_at": "2026-10-26T19:31:44Z",
+        "added_by": {
+          "external_urls": {
+            "spotify": "https://open.spotify.com/user/1250496669"
+          },
+          "href": "https://api.spotify.com/v1/users/1250496669",
+          "id": "1250496669",
+          "type": "user",
+          "uri": "spotify:user:1250496669"
+        },
+        "is_local": false,
+        "primary_color": null,
+        "item": {
+          "is_playable": true,
+          "explicit": false,
+          "type": "track",
+          "episode": false,
+          "track": true,
+          "album": {
+            "is_playable": true,
+            "type": "album",
+            "album_type": "album",
+            "href": "https://api.spotify.com/v1/albums/3mH6qwIy9crq0I9YQbOuDf",
+            "id": "3mH6qwIy9crq0I9YQbOuDf",
+            "name": "Blonde",
+            "release_date": "2016-08-20",
+            "release_date_precision": "day",
+            "uri": "spotify:album:3mH6qwIy9crq0I9YQbOuDf",
+            "external_urls": {
+              "spotify": "https://open.spotify.com/album/3mH6qwIy9crq0I9YQbOuDf"
+            },
+            "total_tracks": 17
+          },
+          "artists": [
+            {
+              "external_urls": {
+                "spotify": "https://open.spotify.com/artist/2h93pZq0e7k5yf4dywlkpM"
+              },
+              "href": "https://api.spotify.com/v1/artists/2h93pZq0e7k5yf4dywlkpM",
+              "id": "2h93pZq0e7k5yf4dywlkpM",
+              "name": "Frank Ocean",
+              "type": "artist",
+              "uri": "spotify:artist:2h93pZq0e7k5yf4dywlkpM"
+            }
+          ],
+          "disc_number": 1,
+          "track_number": 3,
+          "duration_ms": 184516,
+          "external_ids": {
+            "isrc": "QZ5C81600003"
+          },
+          "external_urls": {
+            "spotify": "https://open.spotify.com/track/3xKsf9qdS1CyvXSMEid6g8"
+          },
+          "href": "https://api.spotify.com/v1/tracks/3xKsf9qdS1CyvXSMEid6g8",
+          "id": "3xKsf9qdS1CyvXSMEid6g8",
+          "name": "Pink + White",
+          "uri": "spotify:track:3xKsf9qdS1CyvXSMEid6g8",
+          "is_local": false
+        },
+        "video_thumbnail": {
+          "url": null
+        }
+      },
+      {
+        "added_at": "2026-10-26T19:31:44Z",
+        "added_by": {
+          "external_urls": {
+            "spotify": "https://open.spotify.com/user/1250496669"
+          },
+          "href": "https://api.spotify.com/v1/users/1250496669",
+          "id": "1250496669",
+          "type": "user",
+          "uri": "spotify:user:1250496669"
+        },
+        "is_local": false,
+        "primary_color": null,
+        "item": {
+          "is_playable": true,
+          "explicit": false,
+          "type": "track",
+          "episode": false,
+          "track": true,
+          "album": {
+            "is_playable": true,
+            "type": "album",
+            "album_type": "album",
+            "href": "https://api.spotify.com/v1/albums/7EJ0OT5ZqybXxcYRa6mccM",
+            "id": "7EJ0OT5ZqybXxcYRa6mccM",
+            "name": "For Emma, Forever Ago",
+            "release_date": "2008-02-19",
+            "release_date_precision": "day",
+            "uri": "spotify:album:7EJ0OT5ZqybXxcYRa6mccM",
+            "external_urls": {
+              "spotify": "https://open.spotify.com/album/7EJ0OT5ZqybXxcYRa6mccM"
+            },
+            "total_tracks": 9
+          },
+          "artists": [
+            {
+              "external_urls": {
+                "spotify": "https://open.spotify.com/artist/4LEiUm1SRbFMgfqnQTwUbQ"
+              },
+              "href": "https://api.spotify.com/v1/artists/4LEiUm1SRbFMgfqnQTwUbQ",
+              "id": "4LEiUm1SRbFMgfqnQTwUbQ",
+              "name": "Bon Iver",
+              "type": "artist",
+              "uri": "spotify:artist:4LEiUm1SRbFMgfqnQTwUbQ"
+            }
+          ],
+          "disc_number": 1,
+          "track_number": 9,
+          "duration_ms": 401413,
+          "external_ids": {
+            "isrc": "US38Y0811509"
+          },
+          "external_urls": {
+            "spotify": "https://open.spotify.com/track/20AC70RUlVz6A6dCcQ5tRS"
+          },
+          "href": "https://api.spotify.com/v1/tracks/20AC70RUlVz6A6dCcQ5tRS",
+          "id": "20AC70RUlVz6A6dCcQ5tRS",
+          "name": "Re: Stacks",
+          "uri": "spotify:track:20AC70RUlVz6A6dCcQ5tRS",
+          "is_local": false
+        },
+        "video_thumbnail": {
+          "url": null
+        }
+      }
+    ],
+    "limit": 100,
+    "next": null,
+    "offset": 0,
+    "previous": null,
+    "total": 3
+  },
+  "type": "playlist",
+  "uri": "spotify:playlist:68myIK5iHfVCVcTxSdaXJJ"
+}

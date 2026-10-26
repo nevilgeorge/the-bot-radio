@@ -1,0 +1,38 @@
+{
+  "collaborative": false,
+  "description": "Live test playlist; safe to delete.",
+  "external_urls": {
+    "spotify": "https://open.spotify.com/playlist/68myIK5iHfVCVcTxSdaXJJ"
+  },
+  "followers": {
+    "href": null,
+    "total": 0
+  },
+  "href": "https://api.spotify.com/v1/playlists/68myIK5iHfVCVcTxSdaXJJ",
+  "id": "68myIK5iHfVCVcTxSdaXJJ",
+  "primary_color": null,
+  "name": "The Bot Radio — test",
+  "type": "playlist",
+  "uri": "spotify:playlist:68myIK5iHfVCVcTxSdaXJJ",
+  "owner": {
+    "href": "https://api.spotify.com/v1/users/1250496669",
+    "id": "1250496669",
+    "type": "user",
+    "uri": "spotify:user:1250496669",
+    "display_name": null,
+    "external_urls": {
+      "spotify": "https://open.spotify.com/user/1250496669"
+    }
+  },
+  "public": false,
+  "snapshot_id": "AAABy2YN91p4hodu8wfjPjxvjyFAX88c",
+  "items": {
+    "limit": 100,
+    "next": null,
+    "offset": 0,
+    "previous": null,
+    "href": "https://api.spotify.com/v1/playlists/68myIK5iHfVCVcTxSdaXJJ/items",
+    "total": 0,
+    "items": []
+  }
+}
