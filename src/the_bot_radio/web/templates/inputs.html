@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container inputs-page">
+  <header class="stack inputs-intro">
+    <p class="kicker">Inputs</p>
+    <h1 class="h1">What the bot reads</h1>
+    <p class="lede">Every morning at 06:00 ET the bot reads eight things about Greenpoint, decides how the day feels, and picks the music to match. Here's each input, where it comes from, and what it does to the playlist.</p>
+  </header>
+
+  <ol class="inputs-list">
+    {%- for d in descriptions %}
+    {%- set r = readings.get(d.key) %}
+    <li class="inputs-item">
+      <div class="inputs-item__title">
+        <span class="inputs-item__n">{{ "%02d"|format(loop.index) }}</span>
+        <div class="inputs-item__name-wrap">
+          <h2 class="inputs-item__name">{{ d.name }}</h2>
+          <span class="meta">{{ d.source }}</span>
+        </div>
+      </div>
+      <div class="inputs-item__body">
+        <p class="inputs-item__reads">{{ d.reads }}</p>
+        <p class="inputs-item__effect">{{ d.effect }}</p>
+      </div>
+      <div class="inputs-today{% if r and r.status != 'ok' %} inputs-today--skipped{% endif %}">
+        <span class="inputs-today__label">Today</span>
+        {%- if r %}
+        {%- set value, _effect = h.input_display(r) %}
+        <span class="inputs-today__value">{{ value }}</span>
+        <span class="inputs-today__weight">Weight {{ ((r.weight * 100)|round|int ~ "%") if r.weight is not none and r.status == "ok" else "—" }}</span>
+        {%- else %}
+        <span class="inputs-today__value">—</span>
+        <span class="inputs-today__weight">Weight —</span>
+        {%- endif %}
+      </div>
+    </li>
+    {%- endfor %}
+  </ol>
+
+  <section class="dashed-box inputs-quiet" aria-labelledby="inputs-quiet-title">
+    <h2 class="h2 inputs-quiet__title" id="inputs-quiet-title">When an input goes quiet</h2>
+    <p class="inputs-quiet__body">If a source is down or its data looks stale, the bot skips it, spreads its weight across the others, and notes the gap in that day's input log. The playlist still drops at 06:00.</p>
+  </section>
+</div>
+{% endblock %}

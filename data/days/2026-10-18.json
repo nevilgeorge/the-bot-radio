@@ -1,0 +1,274 @@
+{
+  "date": "2026-10-18",
+  "dj": "resident-01",
+  "title": "High tide, low tempo",
+  "liner_notes": [
+    "The creek was right up to the bulkhead this afternoon. High tide on a slow weekend means one very long track in the middle and a lot of room on either side of it."
+  ],
+  "inputs": [
+    {
+      "key": "dj_roll",
+      "label": "The DJ roll",
+      "value": "[Resident 01]",
+      "effect": "→ decides whose crate and taste the day starts from",
+      "weight": null,
+      "status": "ok",
+      "raw": {}
+    },
+    {
+      "key": "day_of_week",
+      "label": "Day of week",
+      "value": "Sunday",
+      "effect": "→ Sundays wander",
+      "weight": 0.2,
+      "status": "ok",
+      "raw": {}
+    },
+    {
+      "key": "weather",
+      "label": "Weather · Greenpoint",
+      "value": "57°F, partly cloudy",
+      "effect": "→ mid-tempo, mid-bright",
+      "weight": 0.15,
+      "status": "ok",
+      "raw": {}
+    },
+    {
+      "key": "g_train",
+      "label": "G train",
+      "value": "Good service",
+      "effect": "→ tempo holds steady",
+      "weight": 0.1,
+      "status": "ok",
+      "raw": {}
+    },
+    {
+      "key": "sunset",
+      "label": "Sunset",
+      "value": "6:01 PM",
+      "effect": "→ energy lifts after dark",
+      "weight": 0.1,
+      "status": "ok",
+      "raw": {}
+    },
+    {
+      "key": "tide",
+      "label": "Newtown Creek tide",
+      "value": "High at 1:47 PM",
+      "effect": "→ one very long track mid-set",
+      "weight": 0.25,
+      "status": "ok",
+      "raw": {}
+    },
+    {
+      "key": "citibike",
+      "label": "Citi Bikes · Nassau Av",
+      "value": "10 of 27 docked",
+      "effect": "→ a few deeper cuts",
+      "weight": 0.1,
+      "status": "ok",
+      "raw": {}
+    },
+    {
+      "key": "nyc_311_yesterday",
+      "label": "311, yesterday",
+      "value": "16 noise complaints",
+      "effect": "→ a little louder",
+      "weight": 0.1,
+      "status": "ok",
+      "raw": {}
+    }
+  ],
+  "mood": {
+    "tempo_bpm": 78,
+    "energy": 3,
+    "brightness": 5,
+    "obscurity": 6
+  },
+  "tracks": [
+    {
+      "position": 1,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 245000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Starts slow, the way the creek does.",
+      "wildcard": false
+    },
+    {
+      "position": 2,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 191000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Picked for the commute back on the G.",
+      "wildcard": false
+    },
+    {
+      "position": 3,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 311000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "From the crate's back corner. Nobody asked for it, which is the point.",
+      "wildcard": false
+    },
+    {
+      "position": 4,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 297000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "One the DJ plays every few weeks. It earned it again.",
+      "wildcard": false
+    },
+    {
+      "position": 5,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 330000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "A vocal track, because it's been a while.",
+      "wildcard": false
+    },
+    {
+      "position": 6,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 371000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Holding the tempo where the inputs left it.",
+      "wildcard": false
+    },
+    {
+      "position": 7,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 262000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Slightly off-kilter, like the morning.",
+      "wildcard": false
+    },
+    {
+      "position": 8,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 214000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "A long fade into the evening stretch.",
+      "wildcard": false
+    },
+    {
+      "position": 9,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 231000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "A little brighter, for the lunch walk to McGolrick Park.",
+      "wildcard": false
+    },
+    {
+      "position": 10,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 374000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Late-afternoon light, half a step faster.",
+      "wildcard": false
+    },
+    {
+      "position": 11,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 250000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Keeps the groove steady while the block wakes up.",
+      "wildcard": false
+    },
+    {
+      "position": 12,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 378000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Warm bass for a cool morning.",
+      "wildcard": false
+    },
+    {
+      "position": 13,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 396000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Low end for the walk along the creek.",
+      "wildcard": false
+    },
+    {
+      "position": 14,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 284000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "A breather between the long ones.",
+      "wildcard": false
+    },
+    {
+      "position": 15,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 257000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Sparse drums so the mind can wander.",
+      "wildcard": false
+    },
+    {
+      "position": 16,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 337000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Same key as the last track, so it slides right in.",
+      "wildcard": false
+    },
+    {
+      "position": 17,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 240000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Strings to fill the gap before dark.",
+      "wildcard": false
+    },
+    {
+      "position": 18,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 290000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Picked for the commute back on the G.",
+      "wildcard": false
+    },
+    {
+      "position": 19,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 355000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Wildcard: outside the crate, but it fits the weather.",
+      "wildcard": true
+    },
+    {
+      "position": 20,
+      "title": "[Track title]",
+      "artist": "[Artist]",
+      "duration_ms": 318000,
+      "spotify_id": "PLACEHOLDER",
+      "reason": "Wildcard: a stranger's pick that matches today's tempo.",
+      "wildcard": true
+    }
+  ],
+  "spotify_playlist_id": "PLACEHOLDER",
+  "prompt": "You are the morning DJ at The Bot Radio.\nToday in Greenpoint: 57°F, partly cloudy, G good service,\nsunset 6:01 PM, high tide 1:47 PM, 10/27 bikes docked at Nassau Av.\nBuild a 20-track playlist. Explain every pick\nin one line. No song may appear twice in 30 days.",
+  "model": "[MODEL]",
+  "generated_at": "2026-10-18T06:00:01-04:00"
+}

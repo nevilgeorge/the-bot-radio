@@ -1,0 +1,16 @@
+{#- Mood meters. meter(m) takes a view_helpers.Meter; mood_panel(mood) takes a models.Mood. -#}
+{% macro meter(m) -%}
+<div class="meter">
+  <div class="meter__head"><span>{{ m.label }}</span><span class="meter__value">{{ m.value }}</span></div>
+  <div class="meter__track" aria-hidden="true"><div class="meter__fill{% if m.color == 'amber' %} meter__fill--amber{% endif %}" style="width: {{ m.pct }}%"></div></div>
+</div>
+{%- endmacro %}
+
+{% macro mood_panel(mood, heading="Resulting mood") -%}
+<section class="panel mood" aria-labelledby="mood-panel-title">
+  <h2 class="panel-title" id="mood-panel-title">{{ heading }}</h2>
+  {%- for m in h.mood_meters(mood) %}
+  {{ meter(m) }}
+  {%- endfor %}
+</section>
+{%- endmacro %}

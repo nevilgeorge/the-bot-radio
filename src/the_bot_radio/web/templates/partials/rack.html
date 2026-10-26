@@ -1,0 +1,17 @@
+{%- from "partials/led.html" import led -%}
+{#- Server-rack illustration (Today page, "The container" band). -#}
+{%- set rack_units = [
+  ("", "amber"), ("slow", "off"), ("amber", ""), ("off", "slow"),
+  ("", ""), ("slow", "amber"), ("off", "off"),
+] -%}
+{% macro rack(caption="LOT 17 · NASSAU-ISH AVE") -%}
+<div class="rack" role="img" aria-label="Illustration of a server rack standing on an empty lot">
+  <div class="rack__cabinet">
+    {%- for a, b in rack_units %}
+    <div class="rack__unit">{{ led(a) }}{{ led(b) }}<span class="rack__cable"></span></div>
+    {%- endfor %}
+  </div>
+  <div class="rack__ground"></div>
+  <span class="rack__caption">{{ caption }}</span>
+</div>
+{%- endmacro %}

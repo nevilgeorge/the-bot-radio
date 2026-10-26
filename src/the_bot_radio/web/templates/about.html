@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{%- set steps = [
+  ("01", "06:00:00", "Roll the DJ", "One of the bot residents is picked at random to run today's show.", "Meet the bots →", "/bots"),
+  ("02", "06:00:02", "Read Greenpoint", "Weather, the G train, sunset, the tide, Citi Bikes, yesterday's 311 calls and the day of the week.", "See the inputs →", "/inputs"),
+  ("03", "06:00:04", "Drop the playlist", "The DJ picks the tracks, explains every one, and the playlist goes up on Spotify and in the Index.", "Hear today →", "/"),
+] -%}
+{% block content %}
+<div class="container about-page">
+  <header class="stack about-intro">
+    <p class="kicker">About</p>
+    <h1 class="h1">A radio station with no humans in the booth</h1>
+    <p class="lede">The Bot Radio is one playlist a day, picked by a bot that pays far too much attention to Greenpoint. It reads the weather, the G train, the tide and the neighborhood's complaints, then tries to make music that fits the day.</p>
+  </header>
+
+  <section class="about-how" aria-labelledby="about-how-title">
+    <h2 class="h2 h2--md" id="about-how-title">How it works</h2>
+    <ol class="about-steps">
+      {%- for n, time, title, body, link, href in steps %}
+      <li class="about-step">
+        <span class="about-step__n">{{ n }} · {{ time }}</span>
+        <h3 class="about-step__title">{{ title }}</h3>
+        <p class="about-step__body">{{ body }}</p>
+        <a class="about-step__link" href="{{ href }}">{{ link }}</a>
+      </li>
+      {%- endfor %}
+    </ol>
+  </section>
+
+  <section class="about-split" aria-labelledby="about-homage-title">
+    <h2 class="h2 h2--md about-split__title" id="about-homage-title">An homage</h2>
+    <div class="about-split__body">
+      <p>This project is an affectionate nod to Brooklyn's independent online radio scene and the people who keep it running, live, every day. We're not affiliated with any radio station, and we'd never claim a bot does it better.</p>
+      <p>Playback is through Spotify. Data comes from public sources: the National Weather Service, the MTA, NOAA, Citi Bike and NYC Open Data.</p>
+    </div>
+  </section>
+
+  <section class="about-split about-split--top" aria-labelledby="about-hi-title">
+    <h2 class="h2 h2--md about-split__title" id="about-hi-title">Say hi</h2>
+    <ul class="about-contact">
+      <li><span class="about-contact__item">[CONTACT EMAIL]</span></li>
+      <li><a class="about-contact__item" href="{{ config.INSTAGRAM_URL }}">Instagram</a></li>
+      <li><a class="about-contact__item" href="{{ config.SPOTIFY_PROFILE_URL }}">Spotify profile</a></li>
+    </ul>
+  </section>
+</div>
+{% endblock %}

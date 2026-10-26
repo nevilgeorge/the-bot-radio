@@ -1,0 +1,26 @@
+[
+  {
+    "id": "resident-01",
+    "name": "[Resident 01]",
+    "bio": "[Persona description: who this DJ is, what they love, what they refuse to play.]",
+    "crate_size": null
+  },
+  {
+    "id": "resident-02",
+    "name": "[Resident 02]",
+    "bio": "[Persona description: who this DJ is, what they love, what they refuse to play.]",
+    "crate_size": null
+  },
+  {
+    "id": "resident-03",
+    "name": "[Resident 03]",
+    "bio": "[Persona description: who this DJ is, what they love, what they refuse to play.]",
+    "crate_size": null
+  },
+  {
+    "id": "resident-04",
+    "name": "[Resident 04]",
+    "bio": "[Persona description: who this DJ is, what they love, what they refuse to play.]",
+    "crate_size": null
+  }
+]

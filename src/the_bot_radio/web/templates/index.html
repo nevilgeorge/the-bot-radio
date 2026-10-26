@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{%- from "partials/day_card.html" import day_card -%}
+
+
+{% block content %}
+{%- set names = h.persona_names(personas) %}
+{%- set dj_q = "&dj=" ~ (selected_dj|urlencode) if selected_dj else "" %}
+<div class="container index-page">
+  <div class="stack index-intro">
+    <p class="kicker">The Index</p>
+    <h1 class="h1">Every day, archived</h1>
+    <p class="lede">
+      {%- if first_day %}One playlist a day since {{ h.long_date(first_day.date) }}.{% else %}One playlist a day.{% endif %}
+      Each cover is drawn from that day's inputs: one stripe per reading.</p>
+  </div>
+
+  <nav class="index-filter" aria-labelledby="index-filter-label">
+    <span class="label" id="index-filter-label">Filter by DJ</span>
+    <ul class="filter-chips index-filter__list" role="list">
+      <li><a class="filter-chip" href="/index"{% if not selected_dj %} aria-current="true"{% endif %}>All</a></li>
+      {%- for p in personas %}
+      <li><a class="filter-chip" href="/index?dj={{ p.id|urlencode }}"{% if selected_dj == p.id %} aria-current="true"{% endif %}>{{ p.name }}</a></li>
+      {%- endfor %}
+    </ul>
+  </nav>
+
+  {%- if days %}
+  <section class="stack index-month-block" aria-labelledby="index-month-heading">
+    <h2 class="index-month" id="index-month-heading">{{ h.month_label(selected_month) }} · {{ days|length }} playlist{{ "" if days|length == 1 else "s" }}</h2>
+    <div class="card-grid card-grid--index">
+      {%- for day in days %}
+      {{ day_card(day, names.get(day.dj)) }}
+      {%- endfor %}
+    </div>
+  </section>
+  {%- else %}
+  <section class="stack" aria-labelledby="index-month-heading">
+    {%- if selected_month %}
+    <h2 class="index-month" id="index-month-heading">{{ h.month_label(selected_month) }} · 0 playlists</h2>
+    {%- else %}
+    <h2 class="visually-hidden" id="index-month-heading">Playlists</h2>
+    {%- endif %}
+    <p class="body index-empty">{% if selected_dj %}No playlists from this DJ yet.{% else %}No playlists this month.{% endif %}</p>
+  </section>
+  {%- endif %}
+
+  {%- if prev_month %}
+  <a class="btn btn--secondary index-more" href="/index?month={{ prev_month }}{{ dj_q }}">Load {{ h.month_name(prev_month) }}</a>
+  {%- endif %}
+</div>
+{% endblock %}

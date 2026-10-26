@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{%- from "partials/stripe_cover.html" import stripe_cover -%}
+{%- from "partials/embed.html" import embed -%}
+
+
+{%- macro track_item(t) -%}
+<li class="day-track">
+  <span class="day-track__pos">{{ "%02d"|format(t.position) }}</span>
+  <span class="day-track__body">
+    <span class="day-track__title">{{ t.title }} — {{ t.artist }}
+      {%- if t.wildcard %} <span class="chip chip--wildcard">Wildcard</span>{% endif -%}
+    </span>
+    <span class="day-track__reason">{{ t.reason }}</span>
+  </span>
+  <span class="day-track__time"><span class="visually-hidden">Duration </span>{{ h.format_duration(t.duration_ms) }}</span>
+</li>
+{%- endmacro -%}
+
+{% block content %}
+{%- set dj_name = dj.name if dj else day.dj -%}
+{%- set n_tracks = day.tracks|length -%}
+{%- set first_tracks = day.tracks[:8] -%}
+{%- set more_tracks = day.tracks[8:] -%}
+<div class="container day-page">
+  <nav class="day-crumbs" aria-label="Playlist navigation">
+    <p class="day-crumbs__trail"><a href="/index">The Index</a> <span aria-hidden="true">/</span> <span aria-current="page">{{ h.short_date(day.date) }}</span></p>
+    <p class="day-crumbs__step">
+      {%- if prev_day %}
+      <a href="/index/{{ prev_day.date.isoformat() }}" rel="prev"><span aria-hidden="true">← </span>{{ h.weekday_date(prev_day.date) }}<span class="visually-hidden"> (previous day)</span></a>
+      {%- else %}
+      <span class="day-crumbs__off" aria-disabled="true"><span aria-hidden="true">← </span>{{ h.weekday_date(day.date.fromordinal(day.date.toordinal() - 1)) }}<span class="visually-hidden"> (no earlier playlist)</span></span>
+      {%- endif %}
+      {%- if next_day %}
+      <a href="/index/{{ next_day.date.isoformat() }}" rel="next">{{ h.weekday_date(next_day.date) }}<span aria-hidden="true"> →</span><span class="visually-hidden"> (next day)</span></a>
+      {%- else %}
+      <span class="day-crumbs__off" aria-disabled="true">{{ h.weekday_date(day.date.fromordinal(day.date.toordinal() + 1)) }}<span aria-hidden="true"> →</span><span class="visually-hidden"> (no later playlist)</span></span>
+      {%- endif %}
+    </p>
+  </nav>
+
+  <section class="day-hero" aria-labelledby="day-title">
+    {{ stripe_cover(day, "stripe-cover--lg") }}
+    <div class="day-hero__text">
+      <p class="kicker">{{ h.long_date(day.date) }} · {{ n_tracks }} track{{ "" if n_tracks == 1 else "s" }} · {{ h.total_duration(day.tracks) }}</p>
+      <h1 class="h1 h1--md" id="day-title">{{ day.title }}</h1>
+      {%- for para in day.liner_notes %}
+      <p class="day-hero__notes">{{ para }}</p>
+      {%- endfor %}
+      <p class="meta">— selected by {{ dj_name }}</p>
+      <div class="btn-row">
+        <a class="btn btn--primary" href="https://open.spotify.com/playlist/{{ day.spotify_playlist_id|urlencode }}">Open in Spotify</a>
+        <button class="btn btn--secondary" type="button" hidden data-share-url="{{ config.SITE_URL ~ '/index/' ~ day.date.isoformat() }}" data-share-title="{{ config.SITE_NAME }} — {{ day.title }}" data-share-status="day-share-status">Share</button>
+      </div>
+      <p class="meta share-status" id="day-share-status" role="status" aria-live="polite"></p>
+    </div>
+  </section>
+
+  {{ embed(day) }}
+
+  <div class="split day-detail">
+    <section class="split__main day-tracks" aria-labelledby="tracks-title">
+      <h2 class="h2 h2--md day-tracks__title" id="tracks-title">Track by track</h2>
+      <p class="day-tracks__sub">The bot's reason for every pick.</p>
+      <ol class="day-tracks__list">
+        {%- for t in first_tracks %}
+        {{ track_item(t) }}
+        {%- endfor %}
+      </ol>
+      {%- if more_tracks %}
+      <details class="day-tracks__more">
+        <summary class="btn btn--secondary">Show all {{ n_tracks }}</summary>
+        <ol class="day-tracks__list" start="9">
+          {%- for t in more_tracks %}
+          {{ track_item(t) }}
+          {%- endfor %}
+        </ol>
+      </details>
+      {%- endif %}
+    </section>
+
+    <aside class="split__side panel-stack" aria-label="How this playlist was made">
+      <section class="panel" aria-labelledby="log-title">
+        <h2 class="panel-title day-log__title" id="log-title">Input log</h2>
+        <table class="day-log">
+          <caption class="visually-hidden">Inputs read at {{ config.GENERATION_TIME_LABEL }} and their weight in today's pick</caption>
+          <thead>
+            <tr>
+              <th scope="col">Source</th>
+              <th scope="col">Reading</th>
+              <th scope="col" class="day-log__num">Weight</th>
+            </tr>
+          </thead>
+          <tbody>
+            {%- for r in day.inputs %}
+            {%- set reading, _effect = h.input_display(r) %}
+            <tr{% if r.status != "ok" %} class="day-log__skipped"{% endif %}>
+              <th scope="row">{{ r.label }}</th>
+              <td>{{ reading }}</td>
+              <td class="day-log__num">
+                {%- if r.status != "ok" %}skipped
+                {%- elif r.weight is none %}—
+                {%- else %}{{ "%.2f"|format(r.weight) }}{% endif -%}
+              </td>
+            </tr>
+            {%- endfor %}
+          </tbody>
+        </table>
+      </section>
+
+      <section class="panel day-prompt" aria-labelledby="prompt-title">
+        <h2 class="panel-title" id="prompt-title">The prompt</h2>
+        <pre class="day-prompt__text">{{ day.prompt }}</pre>
+        <p class="day-prompt__meta">model: {{ day.model }} · run {{ h.format_run_time(day.generated_at) }}</p>
+      </section>
+    </aside>
+  </div>
+
+  <nav class="day-more" aria-label="More playlists">
+    {%- if prev_day %}
+    <a class="day-more__link" href="/index/{{ prev_day.date.isoformat() }}">
+      <span class="day-more__label"><span aria-hidden="true">← </span>Yesterday</span>
+      <span class="day-more__title">{{ prev_day.title }}</span>
+    </a>
+    {%- endif %}
+    <a class="day-more__link day-more__link--end" href="/index">
+      <span class="day-more__label">Browse</span>
+      <span class="day-more__title">The full Index <span aria-hidden="true">→</span></span>
+    </a>
+  </nav>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/share.js" defer></script>
+{% endblock %}

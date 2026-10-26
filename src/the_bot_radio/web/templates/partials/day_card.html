@@ -1,0 +1,18 @@
+{%- from "partials/stripe_cover.html" import stripe_cover -%}
+{#- Archive card: whole card is one link to the day page. dj_name may be none. -#}
+{% macro day_card(day, dj_name=none) -%}
+<a class="day-card" href="/index/{{ day.date.isoformat() }}">
+  {{ stripe_cover(day) }}
+  <span class="day-card__meta">
+    <time datetime="{{ day.date.isoformat() }}">{{ h.long_date(day.date) }}</time>
+    {%- if dj_name %}<span>{{ dj_name|upper }}</span>{% endif %}
+  </span>
+  <span class="day-card__title">{{ day.title }}</span>
+  {%- set tags = h.day_tags(day) %}
+  {%- if tags %}
+  <span class="chips">
+    {%- for t in tags %}<span class="chip">{{ t }}</span>{% endfor -%}
+  </span>
+  {%- endif %}
+</a>
+{%- endmacro %}

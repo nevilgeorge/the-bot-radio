@@ -1,0 +1,46 @@
+{%- from "partials/status_pill.html" import status_pill -%}
+{%- from "partials/logo_mark.html" import logo_mark -%}
+{%- set nav_items = [
+  ("today", "/", "Today"),
+  ("index", "/index", "The Index"),
+  ("inputs", "/inputs", "Inputs"),
+  ("bots", "/bots", "Bots"),
+  ("about", "/about", "About"),
+] -%}
+{%- set current = active_nav|default(none) -%}
+{%- macro nav_list() -%}
+<ul class="nav-list">
+  {%- for key, href, label in nav_items %}
+  <li><a href="{{ href }}"{% if key == current %} aria-current="page"{% endif %}>{{ label }}</a></li>
+  {%- endfor %}
+</ul>
+{%- endmacro -%}
+<header class="site-header">
+  <div class="container site-header__inner">
+    <a class="logo" href="/">
+      {{ logo_mark() }}
+      <span class="logo__text">The Bot Radio</span>
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      {{ nav_list() }}
+    </nav>
+    {%- if status|default(none) %}
+    {{ status_pill(status) }}
+    {%- endif %}
+    <details class="menu">
+      <summary class="menu__button">
+        <span class="visually-hidden">Menu</span>
+        <svg class="menu__icon-open" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><line x1="3" y1="6" x2="17" y2="6"/><line x1="3" y1="14" x2="17" y2="14"/></svg>
+        <svg class="menu__icon-close" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" focusable="false"><line x1="4" y1="4" x2="16" y2="16"/><line x1="16" y1="4" x2="4" y2="16"/></svg>
+      </summary>
+      <div class="menu__panel">
+        <nav class="container" aria-label="Main">
+          {{ nav_list() }}
+        </nav>
+      </div>
+    </details>
+  </div>
+</header>
+{%- if status|default(none) %}
+{{ status_pill(status, bar=true) }}
+{%- endif %}

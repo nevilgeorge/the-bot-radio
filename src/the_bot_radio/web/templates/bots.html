@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{%- from "partials/led.html" import led -%}
+{%- from "partials/resident_card.html" import resident_card -%}
+{% block content %}
+<div class="container bots-page">
+  <header class="stack bots-intro">
+    <p class="kicker">Bots</p>
+    <h1 class="h1">Who's in the booth</h1>
+    <p class="lede">Several bot DJs share the booth, but only one plays each day. At 06:00 the station rolls the dice to pick today's DJ, then that DJ reads the inputs and digs through their own crate.</p>
+  </header>
+
+  {%- if day and today_dj %}
+  <section class="panel panel--accent bots-spotlight" aria-labelledby="bots-spotlight-name">
+    <div class="bots-avatar" aria-hidden="true">
+      {%- for row in h.avatar_grid(today_dj.id) %}
+      {%- set row_i = loop.index0 %}
+      {%- for on in row %}
+      {%- set i = row_i * 4 + loop.index0 %}
+      <span class="bots-avatar__cell{% if on %}{{ ' bots-avatar__cell--amber' if i % 5 == 0 else ' bots-avatar__cell--on' }}{% endif %}"></span>
+      {%- endfor %}
+      {%- endfor %}
+    </div>
+    <div class="bots-spotlight__body">
+      <p class="bots-spotlight__status">{{ led() }}<span>On air today · rolled at {{ h.format_run_time(day.generated_at) }}</span></p>
+      <h2 class="bots-spotlight__name" id="bots-spotlight-name">{{ today_dj.name }}</h2>
+      {%- if today_dj.bio %}
+      <p class="body">{{ today_dj.bio }}</p>
+      {%- endif %}
+      <a class="link-arrow" href="/">Hear today's playlist →</a>
+    </div>
+  </section>
+  {%- else %}
+  <section class="dashed-box bots-spotlight bots-spotlight--empty" aria-labelledby="bots-spotlight-name">
+    <div class="bots-spotlight__body">
+      <p class="bots-spotlight__status bots-spotlight__status--off">{{ led("off") }}<span>Off air · no roll yet</span></p>
+      <h2 class="bots-spotlight__name" id="bots-spotlight-name">The booth is empty</h2>
+      <p class="body">The dice haven't been rolled yet. The first DJ goes on air at {{ config.GENERATION_TIME_LABEL }}.</p>
+    </div>
+  </section>
+  {%- endif %}
+
+  <section class="bots-residents" aria-labelledby="bots-residents-title">
+    <h2 class="h2--md h2" id="bots-residents-title">The residents</h2>
+    <div class="card-grid">
+      {%- for p in personas %}
+      {{ resident_card(p, day is not none and p.id == day.dj, stats[p.id], today) }}
+      {%- endfor %}
+    </div>
+  </section>
+
+  <section class="bots-roll" aria-labelledby="bots-roll-title">
+    <h2 class="h2 h2--md bots-roll__title" id="bots-roll-title">How the roll works</h2>
+    <ol class="bots-roll__list">
+      <li><span class="bots-roll__n">01</span><span>One DJ per day, picked at random at 06:00 ET.</span></li>
+      <li><span class="bots-roll__n">02</span><span>No DJ plays two days in a row.</span></li>
+      <li><span class="bots-roll__n">03</span><span>Most of the playlist comes from that DJ's own crate. A few wildcards come from anywhere and are marked on the playlist page.</span></li>
+    </ol>
+  </section>
+</div>
+{% endblock %}

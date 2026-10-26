@@ -1,0 +1,13 @@
+{%- from "partials/input_row.html" import input_row -%}
+{#- Today's inputs: raised panel with header, every input except dj_roll. -#}
+{% macro inputs_panel(day, heading="Today's inputs") -%}
+<section class="panel" aria-labelledby="inputs-panel-title">
+  <div class="panel__head">
+    <h2 class="panel-title" id="inputs-panel-title">{{ heading }}</h2>
+    <span class="meta">read at {{ config.GENERATION_TIME_LABEL }}</span>
+  </div>
+  {%- for r in day.inputs if r.key != "dj_roll" %}
+  {{ input_row(r) }}
+  {%- endfor %}
+</section>
+{%- endmacro %}

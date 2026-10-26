@@ -1,0 +1,4 @@
+{#- LED: variant is "" | "amber" | "slow" | "off" (space-separated combos allowed). Decorative. -#}
+{% macro led(variant="") -%}
+<span class="led{% if variant %} {{ variant }}{% endif %}" aria-hidden="true"></span>
+{%- endmacro %}

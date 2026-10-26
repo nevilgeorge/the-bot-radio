@@ -1,0 +1,8 @@
+{#- Generated cover art: one horizontal stripe per input (see view_helpers.stripe_cover). -#}
+{% macro stripe_cover(day, class_="") -%}
+<div class="stripe-cover{% if class_ %} {{ class_ }}{% endif %}" role="img" aria-label="Generated cover art for {{ h.short_date(day.date) }}: one stripe per input">
+  {%- for s in h.stripe_cover(day) %}
+  <span class="stripe-cover__stripe" style="flex-grow: {{ s.grow }}; background: var({{ s.color }})"></span>
+  {%- endfor %}
+</div>
+{%- endmacro %}

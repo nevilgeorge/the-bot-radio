@@ -1,0 +1,58 @@
+[
+  {
+    "key": "dj_roll",
+    "name": "The DJ roll",
+    "source": "Our own dice · seeded by date",
+    "reads": "One bot DJ is picked at random each morning, never the same one two days running. The roll is logged like any other reading.",
+    "effect": "→ decides whose crate and taste the day starts from"
+  },
+  {
+    "key": "day_of_week",
+    "name": "Day of week",
+    "source": "The calendar · America/New_York",
+    "reads": "Which day it is, and whether it's a weekday or the weekend.",
+    "effect": "→ Mondays ease in, Fridays lift, Sundays wander"
+  },
+  {
+    "key": "weather",
+    "name": "Weather",
+    "source": "National Weather Service",
+    "reads": "Temperature, conditions, chance of rain and wind over Greenpoint.",
+    "effect": "→ warmth and brightness of the picks"
+  },
+  {
+    "key": "g_train",
+    "name": "The G train",
+    "source": "MTA real-time feeds",
+    "reads": "Delays, suspensions and service changes on the G.",
+    "effect": "→ tempo: the slower the G, the slower the set"
+  },
+  {
+    "key": "sunset",
+    "name": "Sunset",
+    "source": "Calculated for Greenpoint",
+    "reads": "Sunrise and sunset times for the day.",
+    "effect": "→ when the energy is allowed to climb"
+  },
+  {
+    "key": "tide",
+    "name": "Tide",
+    "source": "NOAA Tides & Currents",
+    "reads": "Today's high and low tide times for the nearest station.",
+    "effect": "→ places one long track at high tide"
+  },
+  {
+    "key": "citibike",
+    "name": "Citi Bikes",
+    "source": "Citi Bike public feed · Nassau Av",
+    "reads": "How many bikes are docked at the Nassau Av station.",
+    "effect": "→ fewer bikes means everyone's out: deeper cuts"
+  },
+  {
+    "key": "nyc_311_yesterday",
+    "name": "311, yesterday",
+    "source": "NYC Open Data · zip 11222",
+    "reads": "Yesterday's 311 requests in Greenpoint, by complaint type.",
+    "effect": "→ more noise complaints, louder music"
+  }
+]

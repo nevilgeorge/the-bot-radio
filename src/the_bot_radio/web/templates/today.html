@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{%- from "partials/embed.html" import embed -%}
+{%- from "partials/inputs_panel.html" import inputs_panel -%}
+{%- from "partials/meter.html" import mood_panel -%}
+{%- from "partials/rack.html" import rack -%}
+{%- from "partials/day_card.html" import day_card -%}
+{%- from "partials/resident_card.html" import resident_card_booting -%}
+{%- from "partials/footer.html" import footer_full -%}
+{%- from "partials/led.html" import led -%}
+
+
+{% block content %}
+{%- set names = h.persona_names(personas) %}
+
+{#- ---------------------------------------------------------------- Hero -#}
+{%- if day %}
+{%- set date_iso = day.date.isoformat() %}
+{%- set title_parts = day.title.split(",", 1) %}
+<section class="section today-hero" aria-labelledby="today-title">
+  <div class="container split">
+    <div class="split__main today-hero__main">
+      <p class="kicker">Today<span class="today-wide">'s playlist</span> · <time datetime="{{ date_iso }}">{{ h.long_date(day.date) }}</time></p>
+      <h1 class="h1 today-hero__title" id="today-title">
+        {%- if title_parts|length == 2 and title_parts[1].strip() -%}
+          {{ title_parts[0] }},<br class="today-hero__break"> {{ title_parts[1].strip() }}
+        {%- else -%}
+          {{ day.title }}
+        {%- endif -%}
+      </h1>
+      {%- if day.liner_notes %}
+      <p class="lede">{{ day.liner_notes[0] }}</p>
+      {%- endif %}
+      <p class="meta today-hero__meta">— selected by {{ dj.name if dj else names.get(day.dj, day.dj) }} · {{ day.tracks|length }} tracks · {{ h.total_duration(day.tracks) }}</p>
+      {{ embed(day) }}
+      <div class="btn-row today-hero__actions">
+        <a class="btn btn--primary" href="https://open.spotify.com/playlist/{{ day.spotify_playlist_id|urlencode }}">Open in Spotify</a>
+        <a class="btn btn--secondary" href="/index/{{ date_iso }}"><span>Why these<span class="today-wide"> songs</span>?<span class="today-wide" aria-hidden="true">&nbsp;→</span></span></a>
+        <button class="btn btn--secondary today-share" type="button" hidden
+          data-share-url="{{ config.SITE_URL }}/index/{{ date_iso }}"
+          data-share-title="{{ config.SITE_NAME }} — {{ day.title }}"
+          data-share-status="today-share-status">Share today</button>
+      </div>
+      <p class="meta today-share-status" id="today-share-status" role="status" aria-live="polite"></p>
+    </div>
+    <aside class="split__side panel-stack" aria-label="Today's inputs and mood">
+      {{ inputs_panel(day) }}
+      {{ mood_panel(day.mood) }}
+    </aside>
+  </div>
+</section>
+{%- else %}
+<section class="section today-hero today-hero--empty" aria-labelledby="today-title">
+  <div class="container stack">
+    <p class="kicker">Today's playlist · <time datetime="{{ today.isoformat() }}">{{ h.long_date(today) }}</time></p>
+    <h1 class="h1 today-hero__title" id="today-title">First drop coming at {{ config.GENERATION_TIME_LABEL }}</h1>
+    <p class="lede">The bot hasn't pressed play yet. Every morning at 6 it reads the neighborhood and drops one new playlist. Check back after the drop.</p>
+    <p class="meta">{{ status }}</p>
+  </div>
+</section>
+{%- endif %}
+
+{#- ------------------------------------------------------- The container -#}
+<section class="section section--raised today-container" aria-labelledby="container-title">
+  <div class="container today-container__inner">
+    <div class="stack today-container__copy">
+      <p class="kicker">The container</p>
+      <h2 class="h2 h2--lg" id="container-title">Broadcasting from a server rack on an empty lot in Greenpoint.</h2>
+      <p class="body today-container__body">(Not really. It's a cron job.) Every morning at 6, the bot reads the neighborhood, decides how the day feels, and drops one new playlist. No requests, no skips, no human in the booth.</p>
+      <a class="link-arrow" href="/about">How it works →</a>
+    </div>
+    <div class="today-container__art">
+      {{ rack() }}
+    </div>
+  </div>
+</section>
+
+{#- ------------------------------------------------------- Index preview -#}
+{%- if recent %}
+<section class="section today-index" aria-labelledby="index-title">
+  <div class="container today-section">
+    <div class="section-head">
+      <div>
+        <p class="kicker">The Index</p>
+        <h2 class="h2" id="index-title">Every day, archived</h2>
+      </div>
+      <a class="link-arrow" href="/index">All<span class="today-wide"> playlists</span> →</a>
+    </div>
+    <ul class="card-grid card-grid--days today-index__grid" role="list">
+      {%- for d in recent %}
+      <li>{{ day_card(d, names.get(d.dj)) }}</li>
+      {%- endfor %}
+    </ul>
+    <p class="meta today-index__caption">Cover art is generated from each day's inputs: one stripe per reading.</p>
+  </div>
+</section>
+{%- endif %}
+
+{#- -------------------------------------------------------- Bot residents -#}
+{%- if personas %}
+{%- set ns = namespace(all_real=true) %}
+{%- for p in personas %}
+  {%- if not p.bio or p.bio.startswith("[") %}{% set ns.all_real = false %}{% endif %}
+{%- endfor %}
+<section class="section section--ruled today-residents" aria-labelledby="residents-title">
+  <div class="container today-section">
+    <div>
+      <p class="kicker today-residents__kicker">Bot residents</p>
+      <h2 class="h2" id="residents-title">{{ "In the booth" if ns.all_real else "Booting up soon" }}</h2>
+    </div>
+    <ul class="today-residents__grid" role="list">
+      {%- for p in personas %}
+      <li>
+        {%- if ns.all_real %}
+        {%- set on_air = day is not none and day.dj == p.id %}
+        <a class="resident-card" href="/bots">
+          <span class="resident-card__status">{{ led("" if on_air else "off") }}{{ "On air today" if on_air else "Off air" }}</span>
+          <span class="resident-card__name">{{ p.name }}</span>
+          <span class="resident-card__persona">{{ p.bio }}</span>
+          <span class="resident-card__link">Meet the bots →</span>
+        </a>
+        {%- else %}
+        {{ resident_card_booting(p) }}
+        {%- endif %}
+      </li>
+      {%- endfor %}
+    </ul>
+  </div>
+</section>
+{%- endif %}
+{% endblock %}
+
+{% block footer %}{{ footer_full(subscribed) }}{% endblock %}
+
+{% block scripts %}
+  <script src="/static/js/share.js" defer></script>
+{% endblock %}

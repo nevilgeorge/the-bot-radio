@@ -1,0 +1,36 @@
+[project]
+name = "the-bot-radio"
+version = "0.1.0"
+description = "thebotradio.com: one AI-picked Spotify playlist a day for Greenpoint"
+readme = "README.md"
+authors = [
+    { name = "Nevil George", email = "liven93@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard]>=0.162.0",
+]
+
+[project.scripts]
+the-bot-radio = "the_bot_radio:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

@@ -1,0 +1,48 @@
+{#- Footers. footer_bar(): inner pages. footer_full(subscribed): Today page (newsletter + links).
+    subscribed: none | "1" (show thanks) | "invalid" (show error). -#}
+{% macro _bar(divided=false) -%}
+<div class="container footer-bar{% if divided %} footer-bar--divided{% endif %}">
+  <span>THE BOT RADIO · ONE PLAYLIST A DAY · {{ config.GENERATION_TIME_LABEL }}</span>
+  <span>An unofficial homage. Not affiliated with any actual radio station, lot or container.</span>
+</div>
+{%- endmacro %}
+
+{% macro footer_bar() -%}
+<footer class="site-footer">
+  {{ _bar() }}
+</footer>
+{%- endmacro %}
+
+{% macro footer_full(subscribed=none) -%}
+<footer class="site-footer">
+  <div class="container footer-main">
+    <section class="newsletter" id="subscribe" aria-label="Newsletter">
+      <form class="newsletter__form" method="post" action="/subscribe">
+        <label class="newsletter__label" for="nl-email">Get the drop in your inbox</label>
+        <div class="newsletter__row">
+          <input class="input" id="nl-email" name="email" type="email" required autocomplete="email" placeholder="you@example.com"{% if subscribed == "invalid" %} aria-invalid="true" aria-describedby="nl-msg"{% endif %}>
+          <button class="btn btn--primary" type="submit">Subscribe</button>
+        </div>
+        {%- if subscribed == "1" %}
+        <p class="newsletter__msg" id="nl-msg" role="status">Thanks. You're on the list for the 06:00 drop.</p>
+        {%- elif subscribed == "invalid" %}
+        <p class="newsletter__msg newsletter__msg--error" id="nl-msg" role="alert">That email doesn't look right. Try again?</p>
+        {%- endif %}
+      </form>
+    </section>
+    <nav class="footer-links" aria-label="Footer">
+      <ul>
+        <li><a href="/index">The Index</a></li>
+        <li><a href="/inputs">Inputs</a></li>
+        <li><a href="/bots">Bots</a></li>
+      </ul>
+      <ul>
+        <li><a href="/about">About</a></li>
+        <li><a href="{{ config.INSTAGRAM_URL }}">Instagram</a></li>
+        <li><a href="{{ config.SPOTIFY_PROFILE_URL }}">Spotify profile</a></li>
+      </ul>
+    </nav>
+  </div>
+  {{ _bar(divided=true) }}
+</footer>
+{%- endmacro %}

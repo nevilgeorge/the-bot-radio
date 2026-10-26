@@ -1,0 +1,11 @@
+{%- from "partials/led.html" import led -%}
+{#- Status pill (desktop header). bar=true renders the thin phone bar under the header. -#}
+{% macro status_pill(status, bar=false) -%}
+{%- if bar -%}
+<div class="status-bar">
+  <p class="container status-bar__inner">{{ led() }}<span>{{ status }}</span></p>
+</div>
+{%- else -%}
+<p class="status-pill">{{ led() }}<span>{{ status }}</span></p>
+{%- endif -%}
+{%- endmacro %}

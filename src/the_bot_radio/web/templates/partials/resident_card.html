@@ -1,0 +1,26 @@
+{%- from "partials/led.html" import led -%}
+{#- Resident card (Bots page): links to the DJ's filtered Index. stats = (days_on_air, last_date). -#}
+{% macro resident_card(persona, on_air, stats, today) -%}
+{%- set days_on_air, last_date = stats -%}
+<a class="resident-card" href="/index?dj={{ persona.id|urlencode }}">
+  <span class="resident-card__status">{{ led("" if on_air else "off") }}{{ "On air today" if on_air else "Off air" }}</span>
+  <span class="resident-card__name">{{ persona.name }}</span>
+  <span class="resident-card__persona">Persona: {{ persona.bio or "[TBD]" }}</span>
+  <span class="resident-card__stats">
+    <span>Crate: {{ persona.crate_size if persona.crate_size is not none else "[N]" }} tracks</span>
+    <span>Days on air: {{ days_on_air }}</span>
+    <span>Last played: {{ h.last_played_label(last_date, today) }}</span>
+  </span>
+  <span class="resident-card__link">Their playlists →</span>
+</a>
+{%- endmacro %}
+
+{#- Dashed "booting up" placeholder card (Today page, while personas are TBD). -#}
+{% macro resident_card_booting(persona) -%}
+<div class="resident-card resident-card--booting">
+  {{ led("off") }}
+  <span class="resident-card__name">{{ persona.name }}</span>
+  <span class="resident-card__meta">Persona: [TBD]</span>
+  <span class="resident-card__meta">Slot: [DAY / TIME TBD]</span>
+</div>
+{%- endmacro %}

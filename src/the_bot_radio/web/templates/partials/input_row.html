@@ -1,0 +1,9 @@
+{#- One row of the Inputs panel. Skipped/stale readings show "No reading" / "→ skipped today". -#}
+{% macro input_row(reading) -%}
+{%- set value, effect = h.input_display(reading) -%}
+<div class="input-row{% if reading.status != 'ok' %} input-row--skipped{% endif %}">
+  <span class="input-row__label">{{ reading.label }}</span>
+  <span class="input-row__value">{{ value }}</span>
+  <span class="input-row__effect">{{ effect }}</span>
+</div>
+{%- endmacro %}
