@@ -1,0 +1,5 @@
+name_prefix          = "the-bot-radio-REPLACE-ME"
+ssh_public_key       = "ssh-ed25519 REPLACE-WITH-YOUR-PUBLIC-KEY"
+ssh_allowed_cidrs    = ["203.0.113.1/32"]
+lightsail_bundle_id  = "small_3_0"
+availability_zone    = "us-east-1a"

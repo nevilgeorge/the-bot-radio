@@ -29,6 +29,20 @@ uv run uvicorn the_bot_radio.web.main:app --reload --port 8000
 Pages: `/` (Today), `/index` (archive, `?dj=resident-02`, `?month=2026-10`), `/index/2026-10-26`
 (daily playlist), `/inputs`, `/bots`, `/about`. Health check: `/healthz`.
 
+## Deploy to Lightsail
+
+The site runs on one Ubuntu Lightsail instance. Caddy handles HTTPS for both domains
+and proxies all requests to FastAPI; systemd manages Uvicorn.
+
+For routine code updates, run from the repository root:
+
+```bash
+./deploy/deploy-site.sh --identity-file ~/.ssh/id_ed25519
+```
+
+Deployments preserve the server's data. Use `--seed-data` only when initializing an empty
+server. See [deployment, logs, and troubleshooting](deploy/README.md) or
+[infrastructure setup and updates](terraform/README.md).
 
 ## Generate a daily playlist
 
@@ -98,6 +112,8 @@ RUN_LIVE=1 uv run pytest -s tests/generation/test_daily.py::test_live_generation
 ```bash
 uv run pytest
 uv run ruff check . && uv run ruff format .
+bash -n deploy/deploy-site.sh deploy/remote-deploy.sh
+terraform -chdir=terraform test
 ```
 
 ## Data

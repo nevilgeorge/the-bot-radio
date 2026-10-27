@@ -40,6 +40,12 @@ NOT_FOUND_PATHS = [
     "/index/not-a-date",
     "/index/2026-13-45",
     "/index?month=bad",
+    "/data/personas.json",
+    "/data/days/2026-10-26.json",
+    "/data/runs/private.json",
+    "/published/index.json",
+    "/.env",
+    "/static/../data/personas.json",
 ]
 
 DAY_LINK_RE = re.compile(r'href="/index/(\d{4}-\d{2}-\d{2})"')
@@ -105,6 +111,12 @@ def test_static_css(client: TestClient):
     r = client.get("/static/css/site.css")
     assert r.status_code == 200
     assert "text/css" in r.headers["content-type"]
+
+
+@pytest.mark.parametrize("path", ["/static/js/share.js", "/static/img/favicon.svg"])
+def test_shared_assets(client: TestClient, path: str):
+    """The application serves the assets required by its rendered pages."""
+    assert client.get(path).status_code == 200
 
 
 @pytest.mark.parametrize("path", NOT_FOUND_PATHS)

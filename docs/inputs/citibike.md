@@ -4,7 +4,7 @@ Bikes available summed over **every Citi Bike dock in our ZIP code** (`Settings.
 `BOT_RADIO_ZIP`, default `11222`).
 
 **Source:** Citi Bike NYC GBFS, run by Lyft. Public, no key, no documented rate limit. The feeds
-are static JSON on S3/CloudFront, regenerated about every 30–60 s (`ttl: 60`).
+are static JSON, regenerated about every 30–60 s (`ttl: 60`).
 
 - Autodiscovery: `https://gbfs.citibikenyc.com/gbfs/gbfs.json` (as of 2026-10 this is still
   **v1.1**). Its `gbfs_versions` feed lists v1.1 and **v2.3**.

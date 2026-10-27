@@ -45,9 +45,15 @@
     }
   }
 
-  var buttons = document.querySelectorAll("[data-share-url]");
-  for (var i = 0; i < buttons.length; i++) {
-    buttons[i].hidden = false;
-    buttons[i].addEventListener("click", onClick);
+  function initializeSharing() {
+    var buttons = document.querySelectorAll("[data-share-url]");
+    for (var i = 0; i < buttons.length; i++) {
+      if (buttons[i].dataset.shareReady) continue;
+      buttons[i].dataset.shareReady = "true";
+      buttons[i].hidden = false;
+      buttons[i].addEventListener("click", onClick);
+    }
   }
+  window.initializeSharing = initializeSharing;
+  initializeSharing();
 })();
