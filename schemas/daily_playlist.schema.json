@@ -1,0 +1,298 @@
+{
+  "$defs": {
+    "DailyInput": {
+      "additionalProperties": false,
+      "description": "Trusted evidence with its agent-authored effect and weight.",
+      "properties": {
+        "key": {
+          "title": "Key",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ok",
+            "stale",
+            "skipped"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "data": {
+          "additionalProperties": true,
+          "title": "Data",
+          "type": "object"
+        },
+        "raw": {
+          "additionalProperties": true,
+          "title": "Raw",
+          "type": "object"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Error"
+        },
+        "fetched_at": {
+          "format": "date-time",
+          "title": "Fetched At",
+          "type": "string"
+        },
+        "effect": {
+          "title": "Effect",
+          "type": "string"
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Weight"
+        }
+      },
+      "required": [
+        "key",
+        "label",
+        "value",
+        "status",
+        "data",
+        "raw",
+        "error",
+        "fetched_at",
+        "effect",
+        "weight"
+      ],
+      "title": "DailyInput",
+      "type": "object"
+    },
+    "DailyTrack": {
+      "additionalProperties": false,
+      "description": "A persisted recording with the backward-compatible display credit.",
+      "properties": {
+        "position": {
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Position",
+          "type": "integer"
+        },
+        "spotify_id": {
+          "pattern": "^[A-Za-z0-9]{22}$",
+          "title": "Spotify Id",
+          "type": "string"
+        },
+        "spotify_url": {
+          "minLength": 1,
+          "title": "Spotify Url",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "artists": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Artists",
+          "type": "array"
+        },
+        "duration_ms": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "wildcard": {
+          "title": "Wildcard",
+          "type": "boolean"
+        },
+        "artist": {
+          "minLength": 1,
+          "title": "Artist",
+          "type": "string"
+        }
+      },
+      "required": [
+        "position",
+        "spotify_id",
+        "spotify_url",
+        "title",
+        "artists",
+        "duration_ms",
+        "reason",
+        "wildcard",
+        "artist"
+      ],
+      "title": "DailyTrack",
+      "type": "object"
+    },
+    "PlaylistMood": {
+      "additionalProperties": false,
+      "description": "The fixed, separately computed mood used by the selection agent.",
+      "properties": {
+        "tempo_bpm": {
+          "maximum": 160,
+          "minimum": 60,
+          "title": "Tempo Bpm",
+          "type": "integer"
+        },
+        "energy": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Energy",
+          "type": "integer"
+        },
+        "brightness": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Brightness",
+          "type": "integer"
+        },
+        "obscurity": {
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Obscurity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "tempo_bpm",
+        "energy",
+        "brightness",
+        "obscurity"
+      ],
+      "title": "PlaylistMood",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "The accepted daily file, before or after deterministic publication.",
+  "properties": {
+    "date": {
+      "format": "date",
+      "title": "Date",
+      "type": "string"
+    },
+    "dj": {
+      "minLength": 1,
+      "title": "Dj",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "description": {
+      "maxLength": 300,
+      "title": "Description",
+      "type": "string"
+    },
+    "liner_notes": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Liner Notes",
+      "type": "array"
+    },
+    "tracks": {
+      "items": {
+        "$ref": "#/$defs/DailyTrack"
+      },
+      "maxItems": 10,
+      "minItems": 10,
+      "title": "Tracks",
+      "type": "array"
+    },
+    "inputs": {
+      "items": {
+        "$ref": "#/$defs/DailyInput"
+      },
+      "title": "Inputs",
+      "type": "array"
+    },
+    "mood": {
+      "$ref": "#/$defs/PlaylistMood"
+    },
+    "publication_status": {
+      "enum": [
+        "pending",
+        "published"
+      ],
+      "title": "Publication Status",
+      "type": "string"
+    },
+    "spotify_playlist_id": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9]{22}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Spotify Playlist Id"
+    },
+    "prompt": {
+      "minLength": 1,
+      "title": "Prompt",
+      "type": "string"
+    },
+    "model": {
+      "minLength": 1,
+      "title": "Model",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "date",
+    "dj",
+    "title",
+    "description",
+    "liner_notes",
+    "tracks",
+    "inputs",
+    "mood",
+    "publication_status",
+    "spotify_playlist_id",
+    "prompt",
+    "model",
+    "generated_at"
+  ],
+  "title": "DailyRecord",
+  "type": "object"
+}

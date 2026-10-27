@@ -13,8 +13,10 @@
 
 ## LLM requests
 
-- Every call to Claude lives in `src/the_bot_radio/services/claude_service.py` (`ClaudeService`, one method per request type). Prompts are module constants there. Credentials come from `ANTHROPIC_API_KEY` (or an `ant auth login` profile).
-- Tests inject a fake client into `ClaudeService(...)`; respx can't intercept the Anthropic SDK's HTTP layer.
+- Standalone Anthropic requests, including mood scoring, live in `src/the_bot_radio/services/claude_service.py` (`ClaudeService`). Playlist Agent SDK orchestration and its system prompt live in `src/the_bot_radio/generation/agent.py` (`PlaylistAgent`). Credentials come from `ANTHROPIC_API_KEY` (or an `ant auth login` profile).
+- Run one playlist agent task per day. The agent may validate and revise through tools during that task; invalid final output fails without a host repair prompt. The daily job assembles and validates the accepted proposal with trusted metadata before saving.
+- `PlaylistValidator` in `generation/validation.py` binds a validation context to the private `_validate_playlist()` checks. Inject it into `PlaylistAgent` so tool feedback and final validation share the same evidence. `assemble_daily_record()` retains its mandatory host-side check.
+- Tests inject a fake Anthropic client into `ClaudeService(...)` or an `agent_client_factory` into `PlaylistAgent(...)`; respx can't intercept the Anthropic SDK's HTTP layer.
 
 ## Spotify requests
 

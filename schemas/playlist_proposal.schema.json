@@ -1,0 +1,149 @@
+{
+  "$defs": {
+    "InputEffect": {
+      "additionalProperties": false,
+      "description": "An agent-authored interpretation referencing a trusted reading key.",
+      "properties": {
+        "key": {
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "effect": {
+          "title": "Effect",
+          "type": "string"
+        },
+        "weight": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Weight"
+        }
+      },
+      "required": [
+        "key",
+        "effect",
+        "weight"
+      ],
+      "title": "InputEffect",
+      "type": "object"
+    },
+    "PlaylistTrack": {
+      "additionalProperties": false,
+      "description": "A canonical recording plus the agent's sequencing and explanation.",
+      "properties": {
+        "position": {
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Position",
+          "type": "integer"
+        },
+        "spotify_id": {
+          "pattern": "^[A-Za-z0-9]{22}$",
+          "title": "Spotify Id",
+          "type": "string"
+        },
+        "spotify_url": {
+          "minLength": 1,
+          "title": "Spotify Url",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "artists": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Artists",
+          "type": "array"
+        },
+        "duration_ms": {
+          "exclusiveMinimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "reason": {
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "wildcard": {
+          "title": "Wildcard",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "position",
+        "spotify_id",
+        "spotify_url",
+        "title",
+        "artists",
+        "duration_ms",
+        "reason",
+        "wildcard"
+      ],
+      "title": "PlaylistTrack",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Only agent-authored fields; runtime and publication metadata are host-owned.",
+  "properties": {
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "description": {
+      "maxLength": 300,
+      "title": "Description",
+      "type": "string"
+    },
+    "liner_notes": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Liner Notes",
+      "type": "array"
+    },
+    "tracks": {
+      "items": {
+        "$ref": "#/$defs/PlaylistTrack"
+      },
+      "maxItems": 10,
+      "minItems": 10,
+      "title": "Tracks",
+      "type": "array"
+    },
+    "effects": {
+      "items": {
+        "$ref": "#/$defs/InputEffect"
+      },
+      "title": "Effects",
+      "type": "array"
+    }
+  },
+  "required": [
+    "title",
+    "description",
+    "liner_notes",
+    "tracks",
+    "effects"
+  ],
+  "title": "PlaylistProposal",
+  "type": "object"
+}

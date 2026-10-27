@@ -1,4 +1,4 @@
-"""Every request The Bot Radio makes to Claude, via the Anthropic SDK.
+"""Standalone Claude requests, including mood scoring, via the Anthropic SDK.
 
 Prompts live here as module constants so they can be tuned in one place. The client reads
 credentials from the environment (`ANTHROPIC_API_KEY`, or an `ant auth login` profile).
@@ -10,6 +10,7 @@ from typing import Any
 
 import anthropic
 
+from the_bot_radio.generation.runtime import json_value
 from the_bot_radio.services.inputs.base import Reading
 from the_bot_radio.web.models import Mood
 
@@ -64,11 +65,12 @@ def build_mood_prompt(readings: Sequence[Reading]) -> str:
 
 
 class ClaudeService:
-    """Wraps the Anthropic client; one method per kind of request the bot makes."""
+    """Wrap the Anthropic client for standalone requests such as mood scoring."""
 
     def __init__(self, anthropic_client: anthropic.AsyncAnthropic | None = None) -> None:
         """Use `anthropic_client` if given (tests inject a fake), else build one from the env."""
         self.anthropic_client = anthropic_client or anthropic.AsyncAnthropic()
+        self.last_mood_usage: dict[str, Any] = {}
 
     async def score_mood(self, readings: Sequence[Reading]) -> Mood:
         """Turn today's input readings into a `Mood` (tempo, energy, brightness, obscurity)."""
@@ -82,6 +84,10 @@ class ClaudeService:
             betas=[FALLBACK_BETA],
             fallbacks="default",
         )
+        self.last_mood_usage = {
+            "model": getattr(response, "model", MODEL),
+            "usage": json_value(getattr(response, "usage", None)),
+        }
         if response.stop_reason == "refusal":
             refusal_category = response.stop_details.category if response.stop_details else None
             raise ValueError(f"mood request refused (category: {refusal_category})")

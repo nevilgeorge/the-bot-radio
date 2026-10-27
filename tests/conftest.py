@@ -1,3 +1,4 @@
+import os
 import shutil
 from collections.abc import Iterator
 from pathlib import Path
@@ -28,3 +29,17 @@ def client(site_data_dir: Path) -> Iterator[TestClient]:
             yield c
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+def pytest_collection_modifyitems(config, items):
+    if os.environ.get("RUN_LIVE") == "1":
+        return
+    skip = pytest.mark.skip(reason="live API test; set RUN_LIVE=1 to run")
+    for item in items:
+        if "live" in item.keywords:
+            item.add_marker(skip)

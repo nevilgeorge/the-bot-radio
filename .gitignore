@@ -20,3 +20,6 @@ shared_catalog.jsonl.lock
 /data/shared_catalog_playlists.json
 /data/spotify_playlists.json
 /data/days/
+
+# Generated agent snapshots and transcripts
+/data/runs/

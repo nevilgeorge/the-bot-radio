@@ -201,3 +201,44 @@ def test_real_data_dir_validates(caplog: pytest.LogCaptureFixture):
     for day in days:
         assert [r.key for r in day.inputs] == keys
         assert store.persona(day.dj) is not None
+
+
+def test_pending_days_are_hidden_from_all_store_views(data_dir: Path) -> None:
+    pending_day = make_day("2026-10-03", dj="resident-04")
+    pending_day.update(publication_status="pending", spotify_playlist_id=None)
+    (data_dir / "days" / "2026-10-03.json").write_text(json.dumps(pending_day))
+    store = Store(data_dir)
+    assert store.latest_day().date == date(2026, 10, 2)
+    assert store.get_day(date(2026, 10, 3)) is None
+    assert len(store.list_days()) == 4
+    assert store.list_days(dj="resident-04") == []
+    assert store.resident_stats("resident-04") == (0, None)
+    assert store.prev_next(date(2026, 10, 2))[1] is None
+
+
+def test_pending_day_becomes_visible_after_publication_without_restart(data_dir: Path) -> None:
+    pending_day = make_day("2026-11-01", dj="resident-04")
+    pending_day.update(publication_status="pending", spotify_playlist_id=None)
+    path = data_dir / "days" / "2026-11-01.json"
+    path.write_text(json.dumps(pending_day))
+    store = Store(data_dir)
+    assert "2026-11" not in store.months()
+    assert store.get_day(date(2026, 11, 1)) is None
+
+    pending_day.update(publication_status="published", spotify_playlist_id="1" * 22)
+    path.write_text(json.dumps(pending_day))
+    file_stat = path.stat()
+    os.utime(path, ns=(file_stat.st_atime_ns, file_stat.st_mtime_ns + 1_000_000_000))
+
+    assert store.latest_day().date == date(2026, 11, 1)
+    assert store.get_day(date(2026, 11, 1)).spotify_playlist_id == "1" * 22
+    assert store.months()[0] == "2026-11"
+    assert store.resident_stats("resident-04") == (1, date(2026, 11, 1))
+    assert store.prev_next(date(2026, 10, 2))[1].date == date(2026, 11, 1)
+
+
+def test_explicitly_published_day_without_playlist_id_is_hidden(data_dir: Path) -> None:
+    invalid_day = make_day("2026-10-03")
+    invalid_day.update(publication_status="published", spotify_playlist_id=None)
+    (data_dir / "days" / "2026-10-03.json").write_text(json.dumps(invalid_day))
+    assert Store(data_dir).get_day(date(2026, 10, 3)) is None

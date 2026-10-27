@@ -7,6 +7,7 @@ day always rolls the same DJ, in any process. Yesterday's DJ (read from
 
 import json
 import random
+from collections.abc import Sequence
 from datetime import timedelta
 from pathlib import Path
 from typing import ClassVar
@@ -37,12 +38,17 @@ class DjRollService:
     async def fetch(self, ctx: RunContext) -> Reading:
         """Pick a persona deterministically for `ctx.run_date`."""
         personas = _persona_list_adapter.validate_json((ctx.data_dir / "personas.json").read_text())
-        if not personas:
-            raise ValueError("personas.json has no personas")
-
         yesterday = ctx.run_date - timedelta(days=1)
         yesterdays_dj_id = _yesterdays_dj(ctx.data_dir / "days" / f"{yesterday.isoformat()}.json")
-        excluded_ids = [yesterdays_dj_id] if yesterdays_dj_id and len(personas) >= 2 else []
+        return self.roll(ctx, personas, yesterdays_dj_id)
+
+    def roll(
+        self, ctx: RunContext, personas: Sequence[Persona], previous_dj_id: str | None
+    ) -> Reading:
+        """Roll from already loaded personas and a caller-verified previous DJ."""
+        if not personas:
+            raise ValueError("personas.json has no personas")
+        excluded_ids = [previous_dj_id] if previous_dj_id and len(personas) >= 2 else []
         candidates = [persona for persona in personas if persona.id not in excluded_ids]
         candidates = candidates or personas
 

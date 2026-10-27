@@ -1,5 +1,4 @@
 import json
-import os
 from datetime import date, datetime
 from pathlib import Path
 
@@ -8,20 +7,6 @@ import pytest
 from the_bot_radio.services.inputs.base import TZ, RunContext, Settings, make_http_client
 
 FIXTURES = Path(__file__).parent / "fixtures"
-
-
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-def pytest_collection_modifyitems(config, items):
-    if os.environ.get("RUN_LIVE") == "1":
-        return
-    skip = pytest.mark.skip(reason="live API test; set RUN_LIVE=1 to run")
-    for item in items:
-        if "live" in item.keywords:
-            item.add_marker(skip)
 
 
 def load_fixture(key: str, name: str):

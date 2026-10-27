@@ -90,6 +90,11 @@ class Store:
             except (OSError, ValidationError, ValueError) as exc:
                 log.warning("skipping invalid day file %s: %s", path, exc)
                 continue
+            if day.publication_status == "pending":
+                continue
+            if day.publication_status == "published" and not day.spotify_playlist_id:
+                log.warning("skipping published day without playlist ID: %s", path)
+                continue
             if day.date in by_date:
                 log.warning("skipping %s: duplicate date %s", path, day.date)
                 continue

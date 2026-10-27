@@ -8,6 +8,7 @@ from datetime import date, timedelta
 import pytest
 
 from the_bot_radio.services.inputs.dj_roll import DjRollService
+from the_bot_radio.web.models import Persona
 
 pytestmark = pytest.mark.anyio
 
@@ -115,3 +116,27 @@ async def test_invalid_personas_raises(make_ctx, tmp_path):
     (tmp_path / "personas.json").write_text('[{"name": "no id"}]')
     with pytest.raises(ValueError):
         await DjRollService().fetch(make_ctx(run_date=DAY))
+
+
+async def test_roll_uses_loaded_inputs_without_reading_persona_or_history_files(make_ctx, tmp_path):
+    """Preparation can roll directly without writing duplicate setup files."""
+    personas = [Persona(id="first", name="First"), Persona(id="second", name="Second")]
+    ctx = make_ctx(run_date=DAY)
+    reading = DjRollService().roll(ctx, personas, previous_dj_id="first")
+    assert reading.data["persona_id"] == "second"
+    assert reading.data["excluded"] == ["first"]
+    assert reading.data["candidates"] == ["second"]
+    assert not list(tmp_path.iterdir())
+
+
+async def test_roll_and_fetch_share_the_same_algorithm(make_ctx, tmp_path):
+    """Loading from disk must preserve the preloaded interface's deterministic result."""
+    write_personas(tmp_path, 4)
+    write_day(tmp_path, DAY - timedelta(days=1), json.dumps({"dj": "resident-01"}))
+    personas = [
+        Persona.model_validate(payload)
+        for payload in json.loads((tmp_path / "personas.json").read_text())
+    ]
+    ctx = make_ctx(run_date=DAY)
+    service = DjRollService()
+    assert service.roll(ctx, personas, previous_dj_id="resident-01") == await service.fetch(ctx)

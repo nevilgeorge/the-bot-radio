@@ -32,6 +32,8 @@ class Mood(BaseModel):
 
 
 class Track(BaseModel):
+    spotify_url: str | None = None
+    artists: list[str] = Field(default_factory=list)
     position: int
     title: str
     artist: str
@@ -49,7 +51,9 @@ class Day(BaseModel):
     inputs: list[InputReading]  # in display order
     mood: Mood
     tracks: list[Track]
-    spotify_playlist_id: str
+    description: str = ""
+    publication_status: Literal["pending", "published"] | None = None
+    spotify_playlist_id: str | None
     prompt: str  # exact prompt sent to the model (shown on the day page)
     model: str
     generated_at: datetime  # timezone-aware
