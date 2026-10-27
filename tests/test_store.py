@@ -65,8 +65,7 @@ def data_dir(tmp_path: Path) -> Path:
     write_day(tmp_path, "2026-10-01", dj="resident-01")
     write_day(tmp_path, "2026-10-02", dj="resident-03")
     personas = [
-        {"id": f"resident-0{i}", "name": f"[Resident 0{i}]", "bio": "", "crate_size": None}
-        for i in range(1, 5)
+        {"id": f"resident-0{i}", "name": f"[Resident 0{i}]", "bio": ""} for i in range(1, 5)
     ]
     (tmp_path / "personas.json").write_text(json.dumps(personas), encoding="utf-8")
     inputs = [
@@ -196,7 +195,7 @@ def test_real_data_dir_validates(caplog: pytest.LogCaptureFixture):
     assert not caplog.records
     assert len(days) == 12
     assert days[0].date == date(2026, 10, 26)
-    assert len(store.personas()) == 4
+    assert len(store.personas()) == 7
     assert len(store.input_descriptions()) == 8
     keys = [i.key for i in store.input_descriptions()]
     for day in days:

@@ -16,7 +16,7 @@ DAY = date(2026, 10, 27)
 
 def write_personas(data_dir, n: int) -> list[str]:
     ids = [f"resident-{i:02d}" for i in range(1, n + 1)]
-    personas = [{"id": i, "name": f"[{i}]", "bio": "", "crate_size": None} for i in ids]
+    personas = [{"id": i, "name": f"[{i}]", "bio": ""} for i in ids]
     (data_dir / "personas.json").write_text(json.dumps(personas))
     return ids
 

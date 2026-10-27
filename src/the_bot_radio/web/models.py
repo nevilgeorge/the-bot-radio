@@ -6,9 +6,10 @@ from pydantic import BaseModel, Field
 
 class Persona(BaseModel):
     id: str  # "resident-01"
-    name: str  # display name, e.g. "[Resident 01]" until personas are defined
+    name: str  # display name
     bio: str = ""  # persona description shown on /bots
-    crate_size: int | None = None
+    agent_instructions: str = ""  # playlist selection and sequencing guidance
+    speaking_voice: str = ""  # voice for titles, liner notes, and track explanations
 
 
 class InputReading(BaseModel):
