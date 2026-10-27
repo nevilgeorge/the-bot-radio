@@ -128,6 +128,31 @@ def _playlist_items_page(playlist_payload: dict[str, Any]) -> dict[str, Any]:
     return playlist_payload.get("items") or playlist_payload.get("tracks") or {}
 
 
+def _require_playlist_items_page(items_page: Any) -> dict[str, Any]:
+    """Reject unavailable or malformed playlist contents during strict imports."""
+    if items_page is None:
+        raise SpotifyError(
+            403,
+            "playlist contents unavailable; the authenticated account must own or collaborate "
+            "on the playlist (copy it into a bot-owned playlist first)",
+        )
+    if (
+        not isinstance(items_page, dict)
+        or not isinstance(items_page.get("items"), list)
+        or any(
+            not isinstance(item_row, dict)
+            or not ("item" in item_row or "track" in item_row)
+            or (
+                item_row.get("item", item_row.get("track")) is not None
+                and not isinstance(item_row.get("item", item_row.get("track")), dict)
+            )
+            for item_row in items_page.get("items", [])
+        )
+    ):
+        raise SpotifyError(502, "playlist contents malformed or incomplete; import aborted")
+    return items_page
+
+
 def _parse_playlist(
     playlist_payload: dict[str, Any], tracks: list[SpotifyTrack] | None = None
 ) -> SpotifyPlaylist:
@@ -249,14 +274,65 @@ class SpotifyService:
         )
         return _parse_playlist(response.json(), tracks=[])
 
-    async def get_playlist(self, playlist_id: str) -> SpotifyPlaylist:
-        """Fetch a bot-owned playlist with all its tracks, following item pages."""
-        playlist_payload = (await self._request("GET", f"/playlists/{playlist_id}")).json()
-        items_page = _playlist_items_page(playlist_payload)
+    async def get_current_user_playlists(self) -> list[dict[str, Any]]:
+        """Return every playlist visible to the authorized user, following all list pages.
+
+        Keep Spotify's summary fields intact for offline exports. The refresh token, not
+        the client ID alone, identifies the current user.
+        """
+        playlists: list[dict[str, Any]] = []
+        next_page_url: str | None = "/me/playlists"
+        visited_pages: set[str] = set()
+        while next_page_url:
+            if next_page_url in visited_pages:
+                raise SpotifyError(502, "playlist listing returned a repeated page")
+            visited_pages.add(next_page_url)
+            request_params = (
+                {"limit": 50, "offset": 0} if next_page_url == "/me/playlists" else None
+            )
+            response = await self._request("GET", next_page_url, params=request_params)
+            page = response.json()
+            if not isinstance(page, dict) or not isinstance(page.get("items"), list):
+                raise SpotifyError(502, "playlist listing returned malformed contents")
+            for playlist in page["items"]:
+                if playlist is None:
+                    continue
+                if not isinstance(playlist, dict) or not isinstance(playlist.get("id"), str):
+                    raise SpotifyError(502, "playlist listing returned an invalid playlist")
+                playlists.append(playlist)
+            next_page_url = page.get("next")
+            if next_page_url is not None and not isinstance(next_page_url, str):
+                raise SpotifyError(502, "playlist listing returned an invalid next page")
+        return playlists
+
+    async def get_playlist_details(self, playlist_id: str) -> dict[str, Any]:
+        """Return Spotify's untrimmed Get Playlist response, including its first items page.
+
+        Preserve owner, images, collaboration flags and any omitted contents exactly as
+        returned. Use get_playlist() when all normalized tracks are needed instead.
+        """
+        payload = (await self._request("GET", f"/playlists/{playlist_id}")).json()
+        if not isinstance(payload, dict):
+            raise SpotifyError(502, "playlist details returned a malformed response")
+        return payload
+
+    async def get_playlist(
+        self, playlist_id: str, *, require_contents: bool = False
+    ) -> SpotifyPlaylist:
+        """Fetch all tracks; optionally reject unavailable or malformed contents on import."""
+        playlist_payload = await self.get_playlist_details(playlist_id)
+        if require_contents:
+            items_page = _require_playlist_items_page(
+                playlist_payload.get("items", playlist_payload.get("tracks"))
+            )
+        else:
+            items_page = _playlist_items_page(playlist_payload)
         tracks = _parse_playlist_items(items_page.get("items") or [])
         next_page_url = items_page.get("next")
         while next_page_url:
             items_page = (await self._request("GET", next_page_url)).json()
+            if require_contents:
+                items_page = _require_playlist_items_page(items_page)
             tracks.extend(_parse_playlist_items(items_page.get("items") or []))
             next_page_url = items_page.get("next")
         return _parse_playlist(playlist_payload, tracks=tracks)

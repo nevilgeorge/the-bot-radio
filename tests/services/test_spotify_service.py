@@ -189,6 +189,62 @@ async def test_get_playlist_follows_pages_and_skips_null_items(spotify):
     assert playlist.name == playlist_payload["name"]
 
 
+@pytest.mark.parametrize("contents", [None, "missing"])
+@respx.mock
+async def test_get_playlist_strict_rejects_unavailable_contents(spotify, contents):
+    _mock_token()
+    playlist_payload = load_fixture("spotify", "get_playlist.json")
+    if contents == "missing":
+        playlist_payload.pop("items")
+    else:
+        playlist_payload["items"] = contents
+    respx.get(f"{API_BASE}/playlists/{playlist_payload['id']}").mock(
+        return_value=httpx.Response(200, json=playlist_payload)
+    )
+    with pytest.raises(SpotifyError, match="own or collaborate"):
+        await spotify.get_playlist(playlist_payload["id"], require_contents=True)
+    assert (await spotify.get_playlist(playlist_payload["id"])).tracks == []
+
+
+@respx.mock
+async def test_get_playlist_strict_accepts_empty_and_legacy_contents(spotify):
+    _mock_token()
+    playlist_payload = load_fixture("spotify", "get_playlist.json")
+    playlist_payload.pop("items")
+    playlist_payload["tracks"] = {"items": [], "next": None}
+    respx.get(f"{API_BASE}/playlists/{playlist_payload['id']}").mock(
+        return_value=httpx.Response(200, json=playlist_payload)
+    )
+    assert (await spotify.get_playlist(playlist_payload["id"], require_contents=True)).tracks == []
+
+
+@pytest.mark.parametrize("contents", [{}, {"items": None}, {"items": [None]}, {"items": [{}]}])
+@respx.mock
+async def test_get_playlist_strict_rejects_malformed_contents(spotify, contents):
+    _mock_token()
+    playlist_payload = load_fixture("spotify", "get_playlist.json")
+    playlist_payload["items"] = contents
+    respx.get(f"{API_BASE}/playlists/{playlist_payload['id']}").mock(
+        return_value=httpx.Response(200, json=playlist_payload)
+    )
+    with pytest.raises(SpotifyError, match="malformed or incomplete"):
+        await spotify.get_playlist(playlist_payload["id"], require_contents=True)
+
+
+@respx.mock
+async def test_get_playlist_strict_checks_later_pages(spotify):
+    _mock_token()
+    playlist_payload = load_fixture("spotify", "get_playlist.json")
+    next_url = f"{API_BASE}/playlists/{playlist_payload['id']}/items?offset=1"
+    playlist_payload["items"]["next"] = next_url
+    respx.get(f"{API_BASE}/playlists/{playlist_payload['id']}").mock(
+        return_value=httpx.Response(200, json=playlist_payload)
+    )
+    respx.get(next_url).mock(return_value=httpx.Response(200, json={"next": None}))
+    with pytest.raises(SpotifyError, match="malformed or incomplete"):
+        await spotify.get_playlist(playlist_payload["id"], require_contents=True)
+
+
 @respx.mock
 async def test_add_items_batches_in_order_and_advances_position(spotify):
     _mock_token()
@@ -238,6 +294,60 @@ def test_credentials_from_env_reports_missing(monkeypatch):
     monkeypatch.setenv("SPOTIFY_CLIENT_ID", "set")
     with pytest.raises(RuntimeError, match="SPOTIFY_CLIENT_SECRET, SPOTIFY_REFRESH_TOKEN"):
         SpotifyCredentials.from_env()
+
+
+@respx.mock
+async def test_current_user_playlists_follows_all_pages_and_keeps_metadata(spotify):
+    _mock_token()
+    first_playlist = load_fixture("spotify", "get_playlist.json")
+    second_playlist = {**copy.deepcopy(first_playlist), "id": "another-playlist"}
+    next_url = f"{API_BASE}/me/playlists?offset=50&limit=50"
+    first_route = respx.get(f"{API_BASE}/me/playlists", params={"limit": 50, "offset": 0}).mock(
+        return_value=httpx.Response(200, json={"items": [first_playlist], "next": next_url})
+    )
+    next_route = respx.get(next_url).mock(
+        return_value=httpx.Response(200, json={"items": [None, second_playlist], "next": None})
+    )
+
+    playlists = await spotify.get_current_user_playlists()
+
+    assert playlists == [first_playlist, second_playlist]
+    assert first_route.call_count == next_route.call_count == 1
+
+
+@respx.mock
+async def test_current_user_playlists_empty_and_repeated_page(spotify):
+    _mock_token()
+    playlist_route = respx.get(f"{API_BASE}/me/playlists").mock(
+        return_value=httpx.Response(200, json={"items": [], "next": None})
+    )
+    assert await spotify.get_current_user_playlists() == []
+    playlist_route.mock(
+        return_value=httpx.Response(200, json={"items": [], "next": "/me/playlists"})
+    )
+    with pytest.raises(SpotifyError, match="repeated page"):
+        await spotify.get_current_user_playlists()
+
+
+@pytest.mark.parametrize("payload", [{}, {"items": [7]}, {"items": [], "next": 7}])
+@respx.mock
+async def test_current_user_playlists_rejects_incomplete_listing(spotify, payload):
+    _mock_token()
+    respx.get(f"{API_BASE}/me/playlists").mock(return_value=httpx.Response(200, json=payload))
+    with pytest.raises(SpotifyError):
+        await spotify.get_current_user_playlists()
+
+
+@respx.mock
+async def test_raw_playlist_details_preserves_omitted_contents_and_metadata(spotify):
+    _mock_token()
+    playlist_payload = load_fixture("spotify", "get_playlist.json")
+    playlist_payload.pop("items", None)
+    respx.get(f"{API_BASE}/playlists/{playlist_payload['id']}").mock(
+        return_value=httpx.Response(200, json=playlist_payload)
+    )
+
+    assert await spotify.get_playlist_details(playlist_payload["id"]) == playlist_payload
 
 
 # --- live -------------------------------------------------------------------------------------

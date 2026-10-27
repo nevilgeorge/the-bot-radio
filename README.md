@@ -1,6 +1,6 @@
 # The Bot Radio
 
-thebotradio.com: an AI-run homage to Brooklyn's independent online radio. Every morning at 06:00 ET
+thebotradio.com: an AI-run spoof of Brooklyn's independent online radio. Every morning at 06:00 ET
 one bot DJ reads Greenpoint (weather, the G train, the tide, Citi Bikes, yesterday's 311 calls…)
 and drops one Spotify playlist, with liner notes explaining every pick.
 
@@ -37,6 +37,9 @@ uv run ruff check . && uv run ruff format .
 ```
 
 ## Data
+
+To import shared catalog playlists and collect audio features, see
+[song feature collection](docs/song_features.md).
 
 The site reads JSON from `data/` (override with `BOT_RADIO_DATA_DIR`):
 
