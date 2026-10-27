@@ -52,6 +52,15 @@ Spotify playlist ID. **This command does not create a Spotify playlist.** Rerunn
 day is a no-op; an invalid existing file is preserved and reported as an error. Same-day runs
 are locked against concurrent generation.
 
+To watch agent messages, tool activity, and run events as JSON lines in your terminal:
+
+```bash
+uv run the-bot-radio-generate --verbose
+```
+
+Events stream to stderr with the same credential redaction as `transcript.jsonl`;
+stdout still prints the output path.
+
 Date precedence is `--date`, then `RUN_DATE`, then today in New York. Historical dates affect
 calendar and prediction inputs; weather, train, and bike feeds remain live observations.
 Missing history is recorded explicitly, so an initial run can proceed without prior playlists.

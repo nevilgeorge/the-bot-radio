@@ -128,6 +128,7 @@ async def generate_day(
     now: datetime | None = None,
     model: str = MODEL,
     limits: AgentLimits | None = None,
+    verbose: bool = False,
     claude_service: ClaudeService | None = None,
     spotify_service: SpotifyService | None = None,
     playlist_agent: PlaylistAgent | None = None,
@@ -143,7 +144,9 @@ async def generate_day(
             return daily_path
         artifact_dir = data_dir / "runs" / run_date.isoformat() / uuid.uuid4().hex
         artifact_dir.mkdir(parents=True)
-        transcript = LogTranscript(artifact_dir / "transcript.jsonl")
+        transcript = LogTranscript(
+            artifact_dir / "transcript.jsonl", console=sys.stderr if verbose else None
+        )
         transcript.append({"event": "started", "date": run_date, "now": now, "model": model})
         update_diagnostics(artifact_dir, status="running", date=run_date, now=now, model=model)
         prepared: PreparedRun | None = None
@@ -202,6 +205,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-turns", type=int, default=40)
     parser.add_argument("--budget-usd", type=float, default=5.0)
     parser.add_argument("--deadline-seconds", type=float, default=600.0)
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Stream redacted run events and agent messages to stderr.",
+    )
     return parser.parse_args(argv)
 
 
@@ -215,7 +223,12 @@ def main(argv: list[str] | None = None) -> int:
         limits = AgentLimits(arguments.max_turns, arguments.budget_usd, arguments.deadline_seconds)
         path = asyncio.run(
             generate_day(
-                arguments.data_dir, run_date, now=now, model=arguments.model, limits=limits
+                arguments.data_dir,
+                run_date,
+                now=now,
+                model=arguments.model,
+                limits=limits,
+                verbose=arguments.verbose,
             )
         )
     except (Exception, KeyboardInterrupt) as error:

@@ -4,6 +4,7 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
 from dataclasses import FrozenInstanceError
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -443,7 +444,8 @@ def test_transcript_redacts_environment_credentials_and_normalizes_sdk_messages(
     secret = 'credential-with-"quotes"-and-newline\nvalue'
     monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", secret)
     path = tmp_path / "artifacts" / "transcript.jsonl"
-    transcript = LogTranscript(path)
+    console = StringIO()
+    transcript = LogTranscript(path, console=console)
     transcript.append({"event": "diagnostic", "message": secret})
     transcript.append({"event": "sdk_message", "message": sdk_result(None)})
 
@@ -451,3 +453,4 @@ def test_transcript_redacts_environment_credentials_and_normalizes_sdk_messages(
     assert lines[0]["message"] == "[REDACTED]"
     assert lines[1]["message"]["session_id"] == "test-session"
     assert secret not in path.read_text()
+    assert console.getvalue() == path.read_text()

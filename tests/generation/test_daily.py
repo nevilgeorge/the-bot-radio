@@ -210,6 +210,24 @@ async def test_offline_end_to_end_and_idempotent_rerun(generation_services, monk
     assert services.agent.run.await_count == 1
 
 
+async def test_verbose_generation_streams_transcript_to_stderr(generation_services, capsys):
+    services = generation_services
+    await daily.generate_day(
+        services.data_dir,
+        RUN_DATE,
+        now=NOW,
+        claude_service=services.claude,
+        spotify_service=services.spotify,
+        playlist_agent=services.agent,
+        verbose=True,
+    )
+    console = capsys.readouterr()
+    [transcript_path] = (services.data_dir / "runs/2026-10-27").glob("*/transcript.jsonl")
+    assert console.out == ""
+    assert console.err == transcript_path.read_text()
+    assert json.loads(console.err.splitlines()[-1])["status"] == "accepted"
+
+
 def test_same_date_lock_rejects_concurrent_run_and_allows_other_date(tmp_path):
     with daily.generation_lock(tmp_path, RUN_DATE):
         with pytest.raises(ValueError, match="another generation"):
@@ -375,7 +393,8 @@ async def test_default_agent_receives_validator_with_prepared_context(
 
 
 @pytest.mark.parametrize("use_cli_date", [True, False])
-def test_cli_date_precedence_and_limits(tmp_path, monkeypatch, capsys, use_cli_date):
+@pytest.mark.parametrize("verbose", [True, False])
+def test_cli_date_precedence_and_limits(tmp_path, monkeypatch, capsys, use_cli_date, verbose):
     captured: dict[str, Any] = {}
 
     async def fake_generate(data_dir: Path, run_date: date, **kwargs: Any) -> Path:
@@ -399,11 +418,14 @@ def test_cli_date_precedence_and_limits(tmp_path, monkeypatch, capsys, use_cli_d
     ]
     if use_cli_date:
         arguments += ["--date", "2026-10-26"]
+    if verbose:
+        arguments += ["--verbose"]
     assert daily.main(arguments) == 0
     assert captured["run_date"] == date(2026, 10, 26 if use_cli_date else 25)
     assert captured["model"] == "test-model"
     assert captured["limits"] == AgentLimits(12, 2.5, 75)
     assert captured["now"].tzinfo == TZ
+    assert captured["verbose"] is verbose
     assert "days/2026-10-" in capsys.readouterr().out
 
 

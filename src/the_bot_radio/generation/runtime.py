@@ -7,7 +7,7 @@ import tempfile
 from collections.abc import Callable
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from pydantic import BaseModel
 
@@ -79,10 +79,11 @@ def update_diagnostics(artifact_dir: Path, **updates: Any) -> None:
 class LogTranscript:
     """Append JSONL events with environment credential values redacted."""
 
-    def __init__(self, path: Path) -> None:
-        """Create an artifact-only log, separate from the readable snapshot."""
+    def __init__(self, path: Path, *, console: TextIO | None = None) -> None:
+        """Create a log outside the readable snapshot, optionally mirrored to a console."""
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
+        self.console = console
         self.secrets = [
             value
             for key, value in os.environ.items()
@@ -96,6 +97,8 @@ class LogTranscript:
             encoded = encoded.replace(json.dumps(secret)[1:-1], "[REDACTED]")
         with self.path.open("a", encoding="utf-8") as output_file:
             output_file.write(encoded + "\n")
+        if self.console is not None:
+            print(encoded, file=self.console, flush=True)
 
 
 def filesystem_guard(workspace: Path) -> Callable[..., Any]:
