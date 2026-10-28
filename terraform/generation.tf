@@ -4,6 +4,11 @@ data "aws_partition" "generation" {}
 locals {
   generation_region = "us-east-1"
   generation_name   = "${var.name_prefix}-generation"
+  application_s3_environment = {
+    AWS_DEFAULT_REGION  = local.generation_region
+    BOT_RADIO_S3_BUCKET = aws_s3_bucket.site["data"].id
+    BOT_RADIO_S3_PREFIX = "production"
+  }
   generation_secret_keys = [
     "ANTHROPIC_API_KEY", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET",
     "SPOTIFY_REFRESH_TOKEN", "NYC_OPEN_DATA_APP_TOKEN"
@@ -158,10 +163,38 @@ resource "aws_iam_role_policy" "generation_execution" {
   })
 }
 
-# No application AWS permissions until the separately planned S3 integration.
+# Preserve the deployed generator's daily-record and diagnostic-artifact access.
 resource "aws_iam_role" "generation_task" {
   name               = "${var.name_prefix}-gen-task"
   assume_role_policy = local.generation_ecs_trust
+}
+
+resource "aws_iam_role_policy" "generation_task" {
+  name = "application-data"
+  role = aws_iam_role.generation_task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid      = "DailyRecords"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject"]
+        Resource = "${aws_s3_bucket.site["data"].arn}/production/days/*"
+      },
+      {
+        Sid      = "RunRecords"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject"]
+        Resource = "${aws_s3_bucket.site["data"].arn}/production/runs/*"
+      },
+      {
+        Sid      = "MissingDailyRecords"
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.site["data"].arn
+      }
+    ]
+  })
 }
 
 resource "aws_sqs_queue" "generation_dead_letter" {
@@ -246,11 +279,13 @@ resource "aws_ecs_task_definition" "generation" {
     user            = "10001"
     stopTimeout     = 120
     linuxParameters = { initProcessEnabled = true }
-    environment = [
-      { name = "BOT_RADIO_DATA_DIR", value = "/work/data" },
-      { name = "TZ", value = "America/New_York" },
-      { name = "PYTHONUNBUFFERED", value = "1" }
-    ]
+    environment = [for name, value in merge(local.application_s3_environment, {
+      BOT_RADIO_DATA_DIR = "/work/data"
+      TZ                 = "America/New_York"
+      PYTHONUNBUFFERED   = "1"
+      }) : {
+      name = name, value = value
+    }]
     secrets = [for key in local.generation_secret_keys : {
       name      = key
       valueFrom = "${aws_secretsmanager_secret.generation.arn}:${key}:AWSCURRENT:"
@@ -264,7 +299,7 @@ resource "aws_ecs_task_definition" "generation" {
       }
     }
   }])
-  depends_on = [aws_iam_role_policy.generation_execution]
+  depends_on = [aws_iam_role_policy.generation_execution, aws_iam_role_policy.generation_task]
 }
 
 resource "aws_scheduler_schedule" "generation" {

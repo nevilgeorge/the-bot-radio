@@ -1,4 +1,10 @@
 mock_provider "aws" {
+  mock_resource "aws_s3_bucket" {
+    defaults = {
+      id  = "the-bot-radio-test-data"
+      arn = "arn:aws:s3:::the-bot-radio-test-data"
+    }
+  }
   mock_data "aws_caller_identity" {
     defaults = { account_id = "123456789012" }
   }
@@ -71,6 +77,32 @@ run "foundation_only" {
     error_message = "Both ECS roles must trust only same-account ECS with supported source restrictions."
   }
   assert {
+    condition = jsondecode(aws_iam_role_policy.generation_task.policy) == {
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Sid      = "DailyRecords"
+          Effect   = "Allow"
+          Action   = ["s3:GetObject", "s3:PutObject"]
+          Resource = "arn:aws:s3:::the-bot-radio-test-data/production/days/*"
+        },
+        {
+          Sid      = "RunRecords"
+          Effect   = "Allow"
+          Action   = ["s3:PutObject"]
+          Resource = "arn:aws:s3:::the-bot-radio-test-data/production/runs/*"
+        },
+        {
+          Sid      = "MissingDailyRecords"
+          Effect   = "Allow"
+          Action   = ["s3:ListBucket"]
+          Resource = "arn:aws:s3:::the-bot-radio-test-data"
+        }
+      ]
+    } && aws_iam_role_policy.generation_task.role == aws_iam_role.generation_task.id
+    error_message = "Retain the deployed generator's daily read/write, run write and missing-record listing permissions."
+  }
+  assert {
     condition     = jsondecode(aws_iam_role.generation_scheduler.assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceArn"] == aws_scheduler_schedule_group.generation.arn && jsondecode(aws_iam_role.generation_scheduler.assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceAccount"] == "123456789012"
     error_message = "Scheduler trust must restrict the schedule group and source account."
   }
@@ -102,6 +134,20 @@ run "digest_stages_disabled_schedule" {
   assert {
     condition     = length(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)) == 1 && one(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)).essential && one(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)).image == var.generation_image_uri && one(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)).user == "10001" && one(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)).linuxParameters.initProcessEnabled && one(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)).stopTimeout == 120 && one(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)).logConfiguration.options["awslogs-group"] == aws_cloudwatch_log_group.generation.name
     error_message = "A single non-root essential generator must receive the digest, init, logging and stop timeout."
+  }
+  assert {
+    condition = {
+      for variable in one(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)).environment :
+      variable.name => variable.value
+      } == {
+      AWS_DEFAULT_REGION  = "us-east-1"
+      BOT_RADIO_DATA_DIR  = "/work/data"
+      BOT_RADIO_S3_BUCKET = "the-bot-radio-test-data"
+      BOT_RADIO_S3_PREFIX = "production"
+      PYTHONUNBUFFERED    = "1"
+      TZ                  = "America/New_York"
+    }
+    error_message = "Generator tasks must keep the deployed production S3 location alongside local metadata and runtime settings."
   }
   assert {
     condition     = toset([for secret in one(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)).secrets : secret.name]) == toset(["ANTHROPIC_API_KEY", "SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET", "SPOTIFY_REFRESH_TOKEN", "NYC_OPEN_DATA_APP_TOKEN"]) && alltrue([for secret in one(jsondecode(aws_ecs_task_definition.generation[0].container_definitions)).secrets : secret.valueFrom == "${aws_secretsmanager_secret.generation.arn}:${secret.name}:AWSCURRENT:"])

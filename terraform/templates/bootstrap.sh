@@ -31,9 +31,6 @@ Group=bot-radio
 WorkingDirectory=/opt/the-bot-radio/current
 Environment=BOT_RADIO_DATA_DIR=/var/lib/the-bot-radio/data
 Environment=BOT_RADIO_SITE_URL=https://thebotradio.com
-Environment=BOT_RADIO_S3_BUCKET=the-bot-radio-staging-data
-Environment=BOT_RADIO_S3_PREFIX=production
-Environment=AWS_DEFAULT_REGION=us-east-1
 Environment=TZ=America/New_York
 ExecStart=/opt/the-bot-radio/current/.venv/bin/uvicorn the_bot_radio.web.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure

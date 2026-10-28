@@ -108,6 +108,11 @@ after local metadata is initialized. It installs a systemd drop-in without chang
 bootstrap or triggering replacement. See the deployment guide for verification, rotation,
 automatic/manual rollback, and cache-freshness checks.
 
+The October 28, 2026 reconciliation preserves the deployed generator's S3 environment and
+application-data policy, along with the existing environment and website-user ARN outputs.
+The bootstrap matches the instance's original user data; configure website S3 access through
+the deployment command. A full refreshed plan confirmed no resource or output changes.
+
 ## Local checks
 
 ```bash

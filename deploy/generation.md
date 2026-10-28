@@ -100,9 +100,10 @@ for a task; the script may not yet have received its ARN. A monitoring failure r
 ARN and leaves the job running for inspection. Logs can lag by several seconds.
 
 Paths such as `--data-dir` refer to the **container filesystem**. Local files and environment
-variables such as `RUN_DATE` are not uploaded; pass `--date` explicitly. The staged image
-still has empty, temporary storage, so full generation requires the separately planned data
-integration. This script neither changes the schedule nor publishes a Spotify playlist.
+variables such as `RUN_DATE` are not uploaded; pass `--date` explicitly. The deployed task
+uses the managed data bucket's `production` prefix for daily records and run artifacts.
+Personas, input descriptions, and the catalog must still be available inside the image;
+local run workspaces use temporary container storage. This script does not change the schedule.
 
 To inspect a task independently, use its printed ARN and Terraform's
 `generation_cluster_arn` and `generation_log_group_name` outputs:
@@ -154,7 +155,8 @@ already running standalone task. Secret rollback/rotation is separate and uses S
 
 The execution role can authenticate to ECR (the API requires `Resource = "*"`), pull only
 this repository, write only this log group, and retrieve only this secret. The application
-task role has no AWS policies. Scheduler can run only this task family in this cluster,
+task role can read/write `production/days/*`, write `production/runs/*`, and list the data
+bucket, matching the deployed policy. It has no delete permission. Scheduler can run only this task family in this cluster,
 pass only the two ECS roles to ECS tasks, and send only to its dead-letter queue.
 
 Trust restrictions follow AWS documentation: [Scheduler uses a schedule-group source ARN](https://docs.aws.amazon.com/scheduler/latest/UserGuide/cross-service-confused-deputy-prevention.html),

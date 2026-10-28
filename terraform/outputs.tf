@@ -4,6 +4,12 @@ output "data_bucket_name" {
 output "aws_region" {
   value = "us-east-1"
 }
+output "application_s3_environment" {
+  value = local.application_s3_environment
+}
+output "web_iam_user_arn" {
+  value = aws_iam_user.web.arn
+}
 output "instance_name" {
   value = aws_lightsail_instance.site.name
 }
