@@ -56,7 +56,7 @@ variable "generation_image_uri" {
 }
 
 variable "generation_schedule_enabled" {
-  description = "Keep false until S3 integration, durable duplicate protection and end-to-end validation are complete."
+  description = "Enable daily 06:00 America/New_York generation after end-to-end validation; duplicate delivery risk must be accepted until protection is implemented."
   type        = bool
   default     = false
   validation {

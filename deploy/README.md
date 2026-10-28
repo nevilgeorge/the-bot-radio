@@ -129,7 +129,8 @@ deployments. Previous and failed releases remain on disk; pruning is manual.
 Local metadata and local-mode daily records survive code deployments, but live on the instance
 disk. Back them up before replacing or terminating the instance. S3 mode reads daily records
 directly from the retained bucket; it does not synchronize them to the instance disk.
-Automated backups, playlist generation scheduling, and high availability are not configured.
+Automated backups and high availability are not configured. Playlist generation runs daily
+at 06:00 America/New_York; see [generator operations](generation.md).
 
 ## Local checks
 

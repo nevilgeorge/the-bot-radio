@@ -84,8 +84,8 @@ DNS points to the instance; allow existing DNS caches to expire. See
 
 The website keeps personas and input descriptions in `/var/lib/the-bot-radio/data` on the
 instance. Daily records can come from local files or the S3 memory cache. Code deployments
-preserve the local data; instance replacement does not. There is no automatic backup,
-S3 synchronization, or enabled playlist generation schedule. The generator infrastructure is staged separately; see
+preserve the local data; instance replacement does not. There is no automatic backup or
+local-to-S3 synchronization. Daily generation runs at 06:00 America/New_York; see
 [generator rollout](../deploy/generation.md).
 
 The retained bucket stays at `aws_s3_bucket.site["data"]`, with encryption, versioning,

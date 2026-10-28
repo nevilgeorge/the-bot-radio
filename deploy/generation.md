@@ -1,5 +1,13 @@
 # Stage the daily generator
 
+## Current deployment
+
+The production daily schedule was enabled on October 28, 2026 after successful end-to-end
+runs. It launches at 06:00 America/New_York every day, following daylight saving time.
+The operator accepted Scheduler's at-least-once delivery risk; durable duplicate-run
+protection is deferred. Keep `generation_schedule_enabled = true` for normal operation.
+The staging steps below describe initial setup, with scheduling disabled during rollout.
+
 Commands run from the repository root, using the same AWS profile and Terraform backend
 as hosting. Requirements: Terraform, AWS CLI v2, Docker with Buildx and AMD64 support,
 Git, Python 3, and Bash. The generator uses Fargate On-Demand, 1 vCPU / 4 GiB RAM,
@@ -148,7 +156,7 @@ cover launch delivery; they do not detect or retry a container that launches and
 There is no automated alert destination in this stage.
 
 Use `generation_schedule_name` and its group (the same name) in the Scheduler console to
-confirm `DISABLED`. Foundation-only deployments have no schedule. Inspect the queue with:
+confirm `ENABLED` for normal operation or `DISABLED` during rollout. Foundation-only deployments have no schedule. Inspect the queue with:
 
 ```bash
 terraform -chdir=terraform output -raw generation_dead_letter_queue_url
