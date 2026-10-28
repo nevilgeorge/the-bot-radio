@@ -174,14 +174,22 @@ async def test_snapshot_history_and_selected_persona_only(tmp_path, fake_reading
     assert result.persona.id == "resident-1"
     assert len(result.context.recent_track_ids) == 10
     assert len(list((result.workspace / "history").iterdir())) == 2
-    context_path = result.workspace / "context.json"
-    context = json.loads(context_path.read_text())
+    prompt_data = json.loads(result.prompt)
+    context = prompt_data["inputs"]
+    assert set(context) == {"date", "now", "timezone", "dj", "mood", "history", "readings"}
+    assert context["date"] == RUN_DATE.isoformat()
+    assert context["now"] == NOW.isoformat()
+    assert context["timezone"] == "America/New_York"
+    assert context["dj"] == result.persona.id
+    assert context["mood"] == result.context.mood.model_dump()
     assert context["history"]["incomplete"]
     assert len(context["history"]["included_dates"]) == 2
     assert context["readings"][0]["data"] == {"persona_id": "resident-1"}
     assert context["readings"][1]["status"] == "stale"
     assert context["readings"][2]["status"] == "skipped"
     assert "raw" not in context["readings"][1]
+    assert all("error" not in reading and "raw" not in reading for reading in context["readings"])
+    assert not (result.workspace / "context.json").exists()
     diagnostics = json.loads((result.artifact_dir / "diagnostics.json").read_text())
     audit = diagnostics["inputs"]
     assert audit[1]["raw"] == {"forecast": "retained"}
@@ -190,12 +198,11 @@ async def test_snapshot_history_and_selected_persona_only(tmp_path, fake_reading
     assert not (result.artifact_dir / "setup").exists()
     assert {path.name for path in result.workspace.iterdir()} == {
         "catalog.jsonl",
-        "context.json",
         "history",
         "schemas",
     }
-    prompt_data = json.loads(result.prompt)
-    assert prompt_data == {"persona": result.persona.model_dump()}
+    assert set(prompt_data) == {"persona", "inputs"}
+    assert prompt_data["persona"] == result.persona.model_dump()
     assert "Musical biography 1" in result.prompt
     assert "Musical biography 0" not in result.prompt
     assert not (result.workspace / "schemas/daily_playlist.schema.json").exists()
@@ -277,7 +284,7 @@ async def test_dst_fall_back_keeps_aware_instant_and_calendar_history(
     assert result.generated_at.hour == 1
     assert result.generated_at.fold == expected_fold
     assert result.generated_at.isoformat().endswith(expected_offset)
-    context = json.loads((result.workspace / "context.json").read_text())
+    context = json.loads(result.prompt)["inputs"]
     assert context["date"] == "2026-11-01"
     assert context["now"].endswith(expected_offset)
     assert context["history"]["window_start"] == "2026-10-02"
@@ -432,7 +439,7 @@ async def test_injected_history_bytes_and_diagnostics_callback(tmp_path, fake_re
     assert result.context.recent_track_ids == frozenset(
         f"{100 + index:022d}" for index in range(10)
     )
-    context = json.loads((result.workspace / "context.json").read_bytes())
+    context = json.loads(result.prompt)["inputs"]
     assert context["history"]["excluded_dates"] == ["2026-10-24", "2026-10-25"]
     assert len(updates) == 2
     assert updates[0]["inputs"][1]["raw"] == {"forecast": "retained"}
@@ -548,8 +555,10 @@ async def test_preparation_diagnostics_work_with_run_recorder(tmp_path, fake_rea
     assert diagnostics["status"] == "prepared"
     assert diagnostics["inputs"][1]["raw"] == {"forecast": "retained"}
     assert diagnostics["mood_usage"] == {}
-    assert (stored_run / "workspace/context.json").read_bytes() == (
-        result.workspace / "context.json"
+    assert not (stored_run / "workspace/context.json").exists()
+    assert not (result.workspace / "context.json").exists()
+    assert (stored_run / "workspace/catalog.jsonl").read_bytes() == (
+        result.workspace / "catalog.jsonl"
     ).read_bytes()
 
 

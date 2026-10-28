@@ -15,11 +15,13 @@ s3://<bucket>/<prefix>/
     proposal.json
     search_results.json
     workspace/
-      context.json
       catalog.jsonl
       history/YYYY-MM-DD.json
       schemas/playlist_proposal.schema.json
 ```
+
+Run context and the selected persona are supplied in the initial agent prompt as JSON under
+`inputs` and `persona`; no separate context file is created.
 
 Use a UUID per invocation. Resolve dates using `--date`, then `RUN_DATE`, then today
 in `America/New_York`; keep timestamps timezone-aware. Initial diagnostics establish

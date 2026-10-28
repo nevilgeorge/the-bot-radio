@@ -63,15 +63,17 @@ historical conditions.
 ## Files available to the agent
 
 Paths below are relative to the run's agent-readable `workspace/`. The source catalog stays
-at `data/shared_catalog.jsonl`, with source playlists in `data/days/`. The run-context file and proposal schema
-are prepared by the implementation. Prepare a fixed snapshot of the inputs before starting the
+at `data/shared_catalog.jsonl`, with source playlists in `data/days/`. The run context and selected persona
+are supplied in the initial user prompt as JSON under `inputs` and `persona`. The context includes
+the run date, timezone-aware timestamp, timezone, selected DJ ID, mood, history coverage, and
+normalized readings with status and fetch time; raw payloads and errors are excluded.
+The proposal schema is prepared by the implementation. Prepare a fixed snapshot of the inputs before starting the
 loop so it works from consistent evidence throughout selection and revision.
 
 | File | Purpose |
 | --- | --- |
 | `catalog.jsonl` | One song per line, with Spotify metadata and cached audio descriptors. The pool for the five shared-catalog selections. |
 | `history/YYYY-MM-DD.json` for the preceding 30 days | Published playlists across all DJs, used to exclude recent tracks and understand recent programming. Titles, sequencing, and notes can also help avoid repetitive sets. |
-| `context.json` | Run date, timezone-aware timestamp, selected DJ ID, and today's normalized neighborhood readings with status and fetch time. Include any precomputed mood scores if mood scoring remains a separate step. |
 | `schemas/playlist_proposal.schema.json` | The required creative proposal structure, generated from the canonical Python proposal model. The host assembles the full daily record. |
 
 The history window is `run_date - 30 days <= playlist date < run_date`, using New York dates.
@@ -287,7 +289,8 @@ the host never sends a repair prompt after final validation fails.
 Inputs and schemas are snapshotted under `data/runs/<date>/<run-id>/workspace/`; host-only `proposal.json`,
 `transcript.jsonl`, `diagnostics.json`, and `search_results.json` remain outside that readable
 workspace. Diagnostics combines raw inputs, mood usage, and the run outcome. The workspace
-contains `context.json`, `catalog.jsonl`, `history/`, and `schemas/`; there is no setup directory
+contains `catalog.jsonl`, `history/`, and `schemas/`; run context is supplied in the initial prompt.
+There is no setup directory
 or copied personas file. The annotated full layout is documented at the top of
 `src/the_bot_radio/generation/daily.py`.
 

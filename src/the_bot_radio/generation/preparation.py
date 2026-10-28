@@ -216,26 +216,26 @@ async def prepare_run(
         (workspace_history / f"{snapshot.record.date.isoformat()}.json").write_bytes(
             snapshot.content
         )
-    _write_json(
-        workspace / "context.json",
+    prompt = json.dumps(
         {
-            "date": run_date.isoformat(),
-            "now": now.isoformat(),
-            "timezone": "America/New_York",
-            "dj": persona.id,
-            "mood": mood.model_dump(),
-            "history": coverage,
-            "readings": [
-                reading.model_dump(mode="json", exclude={"raw", "error"}) for reading in readings
-            ],
+            "persona": persona.model_dump(),
+            "inputs": {
+                "date": run_date.isoformat(),
+                "now": now.isoformat(),
+                "timezone": "America/New_York",
+                "dj": persona.id,
+                "mood": mood.model_dump(),
+                "history": coverage,
+                "readings": [
+                    reading.model_dump(mode="json", exclude={"raw", "error"})
+                    for reading in readings
+                ],
+            },
         },
+        indent=2,
+        ensure_ascii=False,
     )
     _write_json(
         workspace / "schemas/playlist_proposal.schema.json", PlaylistProposal.model_json_schema()
-    )
-    prompt = json.dumps(
-        {"persona": persona.model_dump()},
-        indent=2,
-        ensure_ascii=False,
     )
     return PreparedRun(workspace, artifact_dir, persona, context, prompt, now)

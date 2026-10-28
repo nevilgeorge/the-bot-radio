@@ -305,7 +305,6 @@ async def test_offline_end_to_end_and_idempotent_rerun(generation_services, monk
     assert any(event["event"] == "playlist_validation" for event in events)
     workspace = artifacts[0].parent / "workspace"
     assert {path.name for path in workspace.iterdir()} == {
-        "context.json",
         "catalog.jsonl",
         "schemas",
     }

@@ -60,6 +60,7 @@ async def generate_day(
     model: str = MODEL,
     limits: AgentLimits | None = None,
     verbose: bool = False,
+    # Provided by tests only.
     claude_service: ClaudeService | None = None,
     spotify_service: SpotifyService | None = None,
     playlist_agent: PlaylistAgent | None = None,

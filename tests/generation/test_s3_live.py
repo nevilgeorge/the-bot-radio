@@ -154,7 +154,7 @@ async def test_s3_live_generation_history_and_audited_skip(
     history_directory = prepared_run.workspace / "history"
     assert (history_directory / f"{published_date}.json").read_bytes() == history_content
     assert not (history_directory / f"{pending_date}.json").exists()
-    context = json.loads((prepared_run.workspace / "context.json").read_bytes())
+    context = json.loads(prepared_run.prompt)["inputs"]
     assert context["history"]["included_dates"] == [published_date.isoformat()]
     assert context["history"]["excluded_dates"] == [pending_date.isoformat()]
     accepted_directory, accepted_outcome = staged_diagnostics(services)
