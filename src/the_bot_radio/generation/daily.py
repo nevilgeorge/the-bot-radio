@@ -1,6 +1,6 @@
 """Generate a pending daily record through injected storage interfaces.
 
-Each invocation retains evidence beneath the supplied staging root and
+Each invocation retains evidence beneath the supplied local work root and
 checkpoints snapshots through the supplied artifact store. Canonical
 records are created once through DailyRecordStore. Skips are audited too.
 One generation job at a time is assumed; no generation lock is used.
@@ -54,7 +54,7 @@ async def generate_day(
     *,
     daily_store: DailyRecordStore,
     artifact_store: RunArtifactStore,
-    staging_root: Path,
+    local_work_root: Path,
     resources_dir: Path,
     now: datetime | None = None,
     model: str = MODEL,
@@ -68,7 +68,7 @@ async def generate_day(
     for dependency_name, dependency in (
         ("daily_store", daily_store),
         ("artifact_store", artifact_store),
-        ("staging_root", staging_root),
+        ("local_work_root", local_work_root),
         ("resources_dir", resources_dir),
     ):
         if dependency is None:
@@ -79,7 +79,7 @@ async def generate_day(
     now = now.astimezone(TZ)
     limits = limits or AgentLimits()
     run_id = uuid.uuid4().hex
-    local_run_dir = (staging_root / run_date.isoformat() / run_id).resolve()
+    local_run_dir = (local_work_root / run_date.isoformat() / run_id).resolve()
     location = daily_store.storage_location(run_date)
     recorder = RunRecorder(
         artifact_store,
@@ -295,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
                     verbose=arguments.verbose,
                     daily_store=stores.daily_store,
                     artifact_store=stores.artifact_store,
-                    staging_root=stores.staging_root,
+                    local_work_root=stores.local_work_root,
                     resources_dir=RESOURCE_DIR,
                 )
 

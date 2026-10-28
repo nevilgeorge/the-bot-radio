@@ -116,7 +116,7 @@ async def generate_in_staging(
     """Run real orchestration and S3 persistence with deterministic fake providers."""
     return await generate_day(
         RUN_DATE,
-        staging_root=services.data_dir / ".run-staging",
+        local_work_root=services.data_dir / ".run-staging",
         resources_dir=services.data_dir,
         now=NOW,
         claude_service=services.claude,

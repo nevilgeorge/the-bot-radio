@@ -103,9 +103,9 @@ prompt; `ClaudeService` handles standalone requests such as mood scoring. A `Pla
 binds the run context to the shared validation checks and is injected into the agent for tool
 feedback and final proposal validation. The agent returns a proposal and archived prompt. The daily job adds trusted metadata once, validates the
 assembled record, and creates it through the daily storage interface. `generate_day()` returns
-its location string and requires explicit daily/artifact stores, a local staging root,
+its location string and requires explicit daily/artifact stores, a local work root,
 and a resource directory, with the run date as its first positional argument. The CLI
-selects the stores and default staging location from `--data-dir` and environment
+selects the stores and default local work root from `--data-dir` and environment
 configuration and supplies the packaged resources.
 
 Artifact failures after a confirmed commit leave the day accepted but make the command fail.
@@ -129,7 +129,7 @@ leading/trailing prefix slashes are normalized. Canonical records use
 `s3://<bucket>/<prefix>/days/YYYY-MM-DD.json` and artifact snapshots use
 `s3://<bucket>/<prefix>/runs/YYYY-MM-DD/<run-id>/<relative-name>`. Stdout prints the
 canonical S3 URI. Catalog and persona inputs still come from `--data-dir`.
-`BOT_RADIO_RUN_DIR` overrides the retained staging root in S3 mode, defaulting to
+`BOT_RADIO_RUN_DIR` overrides the retained local work root in S3 mode, defaulting to
 `<data-dir>/.run-staging`. Keep this directory available for upload recovery.
 The website uses the same bucket/prefix settings for optional S3 daily reads. It loads
 all daily descriptors at startup and downloads new or changed objects with at most four

@@ -32,7 +32,7 @@ class GenerationStorageConfig:
     data_dir: Path
     bucket: str | None
     prefix: str
-    staging_root: Path
+    local_work_root: Path
 
     @classmethod
     def from_environment(
@@ -46,18 +46,20 @@ class GenerationStorageConfig:
         if bucket is not None:
             validate_s3_bucket(bucket)
         prefix = normalize_s3_prefix(raw_prefix)
-        staging_override = environment.get("BOT_RADIO_RUN_DIR") if bucket else None
-        staging_root = Path(staging_override) if staging_override else data_dir / ".run-staging"
-        return cls(data_dir, bucket, prefix, staging_root)
+        local_work_override = environment.get("BOT_RADIO_RUN_DIR") if bucket else None
+        local_work_root = (
+            Path(local_work_override) if local_work_override else data_dir / ".run-staging"
+        )
+        return cls(data_dir, bucket, prefix, local_work_root)
 
 
 @dataclass(frozen=True)
 class GenerationStores:
-    """Selected byte stores and retained local staging root."""
+    """Selected byte stores and retained local work root."""
 
     daily_store: DailyRecordStore
     artifact_store: RunArtifactStore
-    staging_root: Path
+    local_work_root: Path
 
 
 class S3SDKClient(S3Client, ListingClient, Protocol):
@@ -86,7 +88,7 @@ async def generation_stores(config: GenerationStorageConfig) -> AsyncIterator[Ge
         yield GenerationStores(
             LocalDailyRecordStore(config.data_dir),
             LocalRunArtifactStore(config.data_dir),
-            config.staging_root,
+            config.local_work_root,
         )
         return
 
@@ -103,7 +105,7 @@ async def generation_stores(config: GenerationStorageConfig) -> AsyncIterator[Ge
         yield GenerationStores(
             S3DailyRecordStore(client, config.bucket, config.prefix),
             S3RunArtifactStore(client, config.bucket, config.prefix),
-            config.staging_root,
+            config.local_work_root,
         )
     except BaseException as error:
         primary_error = error

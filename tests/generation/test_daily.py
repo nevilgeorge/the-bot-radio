@@ -164,7 +164,7 @@ def local_dependencies(data_dir: Path) -> dict[str, Any]:
     return {
         "daily_store": LocalDailyRecordStore(data_dir),
         "artifact_store": LocalRunArtifactStore(data_dir),
-        "staging_root": data_dir / ".run-staging",
+        "local_work_root": data_dir / ".run-staging",
         "resources_dir": data_dir,
     }
 
@@ -184,7 +184,7 @@ async def generate(services: SimpleNamespace) -> Path:
 
 
 @pytest.mark.parametrize(
-    "dependency_name", ["daily_store", "artifact_store", "staging_root", "resources_dir"]
+    "dependency_name", ["daily_store", "artifact_store", "local_work_root", "resources_dir"]
 )
 @pytest.mark.parametrize("explicit_none", [False, True], ids=["omitted", "none"])
 async def test_dependencies_are_required_before_any_side_effects(
@@ -199,7 +199,7 @@ async def test_dependencies_are_required_before_any_side_effects(
     dependencies: dict[str, Any] = {
         "daily_store": daily_store,
         "artifact_store": artifact_store,
-        "staging_root": tmp_path / "staging",
+        "local_work_root": tmp_path / "staging",
         "resources_dir": tmp_path / "resources",
     }
     if explicit_none:
@@ -238,7 +238,7 @@ async def test_local_generation_uses_separate_dependency_directories(
     services = generation_services
     daily_root = tmp_path / "daily-output"
     artifact_root = tmp_path / "artifact-output"
-    staging_root = tmp_path / "staging"
+    local_work_root = tmp_path / "staging"
     resources_before = {path.name: path.read_bytes() for path in services.data_dir.iterdir()}
 
     output_path = Path(
@@ -246,7 +246,7 @@ async def test_local_generation_uses_separate_dependency_directories(
             RUN_DATE,
             daily_store=LocalDailyRecordStore(daily_root),
             artifact_store=LocalRunArtifactStore(artifact_root),
-            staging_root=staging_root,
+            local_work_root=local_work_root,
             resources_dir=services.data_dir,
             now=NOW,
             claude_service=services.claude,
@@ -258,7 +258,7 @@ async def test_local_generation_uses_separate_dependency_directories(
     assert output_path == daily_root / "days" / f"{RUN_DATE}.json"
     assert DailyRecord.model_validate_json(output_path.read_bytes()).date == RUN_DATE
     [artifact_directory] = (artifact_root / "runs" / str(RUN_DATE)).iterdir()
-    staging_directory = staging_root / str(RUN_DATE) / artifact_directory.name
+    staging_directory = local_work_root / str(RUN_DATE) / artifact_directory.name
     assert (staging_directory / "workspace" / "history").is_dir()
     assert (artifact_directory / "diagnostics.json").is_file()
     assert (artifact_directory / "workspace" / "catalog.jsonl").read_bytes() == (
@@ -269,7 +269,7 @@ async def test_local_generation_uses_separate_dependency_directories(
     } == resources_before
     assert not (daily_root / "runs").exists()
     assert not (artifact_root / "days").exists()
-    assert not (staging_root / "days").exists()
+    assert not (local_work_root / "days").exists()
 
 
 async def test_offline_end_to_end_and_idempotent_rerun(generation_services, monkeypatch):
@@ -518,7 +518,7 @@ def test_cli_date_precedence_and_limits(tmp_path, monkeypatch, capsys, use_cli_d
     assert captured["verbose"] is verbose
     assert captured["daily_store"].data_dir == tmp_path
     assert captured["artifact_store"].data_dir == tmp_path
-    assert captured["staging_root"] == tmp_path / ".run-staging"
+    assert captured["local_work_root"] == tmp_path / ".run-staging"
     assert captured["resources_dir"] == daily.RESOURCE_DIR
     assert "data_dir" not in captured
     assert "days/2026-10-" in capsys.readouterr().out
@@ -684,7 +684,7 @@ async def generate_in_memory(
     """Exercise orchestration while canonical records and artifacts use URI storage."""
     return await daily.generate_day(
         RUN_DATE,
-        staging_root=kwargs.pop("staging_root", services.data_dir / ".run-staging"),
+        local_work_root=kwargs.pop("local_work_root", services.data_dir / ".run-staging"),
         resources_dir=services.data_dir,
         now=NOW,
         claude_service=services.claude,
@@ -911,13 +911,13 @@ async def test_existing_record_with_wrong_date_fails_without_generation(generati
     assert daily_store.create_calls == 0
 
 
-async def test_custom_staging_root_is_retained(generation_services, tmp_path):
-    staging_root = tmp_path / "retained-work"
+async def test_custom_local_work_root_is_retained(generation_services, tmp_path):
+    local_work_root = tmp_path / "retained-work"
     artifacts = MemoryArtifactStore()
     await generate_in_memory(
-        generation_services, MemoryDailyStore(), artifacts, staging_root=staging_root
+        generation_services, MemoryDailyStore(), artifacts, local_work_root=local_work_root
     )
-    [staging_dir] = (staging_root / str(RUN_DATE)).iterdir()
+    [staging_dir] = (local_work_root / str(RUN_DATE)).iterdir()
     assert (staging_dir / "proposal.json").is_file()
     assert json.loads((staging_dir / "diagnostics.json").read_bytes())["status"] == "accepted"
     assert not (generation_services.data_dir / ".run-staging").exists()

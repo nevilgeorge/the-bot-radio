@@ -101,7 +101,7 @@ async def generate_in_s3(services: SimpleNamespace, client: FakeS3Client) -> str
     """Run production orchestration with S3 adapters and fake provider services."""
     return await generate_day(
         RUN_DATE,
-        staging_root=services.data_dir / ".run-staging",
+        local_work_root=services.data_dir / ".run-staging",
         resources_dir=services.data_dir,
         now=NOW,
         claude_service=services.claude,

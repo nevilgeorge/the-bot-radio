@@ -23,7 +23,7 @@ async def test_local_mode_never_initializes_aws(tmp_path, monkeypatch, bucket):
     async with config.generation_stores(selection) as stores:
         assert isinstance(stores.daily_store, LocalDailyRecordStore)
         assert isinstance(stores.artifact_store, LocalRunArtifactStore)
-        assert stores.staging_root == tmp_path / ".run-staging"
+        assert stores.local_work_root == tmp_path / ".run-staging"
     factory.assert_not_called()
 
 
@@ -70,7 +70,7 @@ async def test_one_client_owned_until_generation_finishes(tmp_path, monkeypatch,
         async with config.generation_stores(selection) as stores:
             assert stores.daily_store.client is client
             assert stores.artifact_store.client is client
-            assert stores.staging_root == tmp_path / "custom"
+            assert stores.local_work_root == tmp_path / "custom"
             client.close.assert_not_called()
             if failure:
                 raise RuntimeError("generation failed")
@@ -144,7 +144,7 @@ def test_cli_passes_s3_stores_and_prints_uri(tmp_path, monkeypatch, capsys):
     assert generation.call_args.args == (date(2026, 10, 27),)
     assert options["daily_store"].client is client
     assert options["artifact_store"].client is client
-    assert options["staging_root"] == tmp_path / "retained"
+    assert options["local_work_root"] == tmp_path / "retained"
     assert options["resources_dir"] == daily.RESOURCE_DIR
     client.close.assert_called_once()
     assert capsys.readouterr().out == "s3://example-bucket/trial/days/2026-10-27.json\n"
