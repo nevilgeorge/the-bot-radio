@@ -119,8 +119,13 @@ Stderr reports the committed location and retained staging directory. Recover up
 using that original identity; recovery archives available output without republishing the daily
 file or regenerating the day. No recovery CLI is provided.
 
-Generation storage defaults to local files. To opt into the Terraform staging bucket,
-set these variables in your shell or uncomment the examples in `.env`:
+The development `.env.example` selects `the-bot-radio-staging-data` with the `development`
+prefix. Copying it to `.env` makes the local website read `development/days/`, and local
+generation writes daily records and run artifacts beneath `development/` in the same bucket.
+The deployed website and generator use the separate `production` prefix. Restart the local
+web server after changing these settings. To use local files, set both `BOT_RADIO_S3_BUCKET` and
+`BOT_RADIO_S3_PREFIX` to empty. Without configuration, storage defaults to local files.
+For an isolated generation run, override the prefix in your shell:
 
 ```bash
 export BOT_RADIO_S3_BUCKET=the-bot-radio-staging-data
@@ -259,7 +264,9 @@ The schema is in `src/the_bot_radio/web/models.py`.
 
 ## Configuration
 
-Optional environment variables (see `src/the_bot_radio/web/config.py`):
+Optional environment variables (see `src/the_bot_radio/web/config.py`). The defaults below
+apply without configuration; `.env.example` selects the S3 bucket and `development` prefix
+described above.
 
 | Variable | Default |
 |---|---|
