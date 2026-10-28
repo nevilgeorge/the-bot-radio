@@ -1,16 +1,33 @@
+"""Website factory owning an optional refreshed S3 snapshot and its SDK client."""
+
+import asyncio
 import logging
+import os
 import re
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Form, Request
+from fastapi import APIRouter, Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from the_bot_radio.generation.config import (
+    GenerationStorageConfig,
+    S3SDKClient,
+    create_s3_client,
+)
+from the_bot_radio.generation.s3_listing import S3DailyListing
+from the_bot_radio.generation.s3_storage import S3DailyRecordStore
+from the_bot_radio.generation.storage import run_in_thread
+
 from . import config
 from . import view_helpers as h
+from .daily_cache import S3DailyCache
 from .store import Store
 
 log = logging.getLogger(__name__)
@@ -19,17 +36,15 @@ DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-app = FastAPI(title=config.SITE_NAME, docs_url=None, redoc_url=None)
-app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
+router = APIRouter()
 
 templates = Jinja2Templates(directory=config.TEMPLATES_DIR)
 templates.env.globals.update(h=h, config=config)
 
-_store = Store(config.DATA_DIR)
 
-
-def get_store() -> Store:
-    return _store
+def get_store(request: Request) -> Store:
+    """Resolve the lifespan-owned store, allowing dependency overrides in tests."""
+    return request.app.state.store
 
 
 StoreDep = Annotated[Store, Depends(get_store)]
@@ -65,14 +80,13 @@ def not_found(request: Request) -> HTMLResponse:
     return render(request, "404.html", active_nav=None, page_title="Dead air", status_code=404)
 
 
-@app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     if exc.status_code == 404:
         return not_found(request)
     return HTMLResponse(str(exc.detail), status_code=exc.status_code)
 
 
-@app.get("/", response_class=HTMLResponse)
+@router.get("/", response_class=HTMLResponse)
 def today_page(request: Request, store: StoreDep, subscribed: str | None = None):
     day = store.latest_day()
     recent = [d for d in store.list_days() if day is None or d.date != day.date][:4]
@@ -89,7 +103,7 @@ def today_page(request: Request, store: StoreDep, subscribed: str | None = None)
     )
 
 
-@app.get("/index", response_class=HTMLResponse)
+@router.get("/index", response_class=HTMLResponse)
 def index_page(request: Request, store: StoreDep, dj: str | None = None, month: str | None = None):
     if month is not None and not MONTH_RE.match(month):
         return not_found(request)
@@ -113,7 +127,7 @@ def index_page(request: Request, store: StoreDep, dj: str | None = None, month: 
     )
 
 
-@app.get("/index/{date_str}", response_class=HTMLResponse)
+@router.get("/index/{date_str}", response_class=HTMLResponse)
 def day_page(request: Request, date_str: str, store: StoreDep):
     if not DATE_RE.match(date_str):
         return not_found(request)
@@ -138,7 +152,7 @@ def day_page(request: Request, date_str: str, store: StoreDep):
     )
 
 
-@app.get("/inputs", response_class=HTMLResponse)
+@router.get("/inputs", response_class=HTMLResponse)
 def inputs_page(request: Request, store: StoreDep):
     day = store.latest_day()
     return render(
@@ -152,7 +166,7 @@ def inputs_page(request: Request, store: StoreDep):
     )
 
 
-@app.get("/bots", response_class=HTMLResponse)
+@router.get("/bots", response_class=HTMLResponse)
 def bots_page(request: Request, store: StoreDep):
     day = store.latest_day()
     personas = store.personas()
@@ -168,12 +182,12 @@ def bots_page(request: Request, store: StoreDep):
     )
 
 
-@app.get("/about", response_class=HTMLResponse)
+@router.get("/about", response_class=HTMLResponse)
 def about_page(request: Request):
     return render(request, "about.html", active_nav="about", page_title="About")
 
 
-@app.post("/subscribe")
+@router.post("/subscribe")
 def subscribe(email: Annotated[str, Form()] = ""):
     email = email.strip()
     if not EMAIL_RE.match(email):
@@ -182,7 +196,89 @@ def subscribe(email: Annotated[str, Form()] = ""):
     return RedirectResponse("/?subscribed=1#subscribe", status_code=303)
 
 
-@app.get("/healthz")
+@router.get("/healthz")
 def healthz(store: StoreDep):
     day = store.latest_day()
     return {"ok": True, "latest_day": day.date.isoformat() if day else None}
+
+
+async def refresh_daily_cache(cache: S3DailyCache, interval: float) -> None:
+    """Refresh serially, waiting after each attempt and reporting recovery."""
+    failed = False
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await cache.refresh()
+        except Exception:
+            failed = True
+            log.exception("S3 daily refresh failed; retaining the previous snapshot")
+        else:
+            if failed:
+                log.info("S3 daily refresh recovered")
+            failed = False
+
+
+def create_app(
+    storage_config: GenerationStorageConfig | None = None,
+    *,
+    client_factory: Callable[[], S3SDKClient] = create_s3_client,
+    refresh_interval: float = 300,
+) -> FastAPI:
+    """Resolve configuration at startup and own all background work and SDK resources."""
+    if refresh_interval <= 0:
+        raise ValueError("refresh interval must be positive")
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI) -> AsyncIterator[None]:
+        configuration = storage_config or GenerationStorageConfig.from_environment(
+            Path(os.environ.get("BOT_RADIO_DATA_DIR", config.REPO_ROOT / "data")), os.environ
+        )
+        if configuration.bucket is None:
+            application.state.store = Store(configuration.data_dir)
+            yield
+            return
+
+        clients: list[S3SDKClient] = []
+        refresh_task: asyncio.Task[None] | None = None
+        primary_error: BaseException | None = None
+
+        def capture_client() -> None:
+            """Retain ownership if startup is cancelled during SDK construction."""
+            clients.append(client_factory())
+
+        try:
+            await run_in_thread(capture_client)
+            client = clients[0]
+            cache = S3DailyCache(
+                S3DailyListing(client, configuration.bucket, configuration.prefix),
+                S3DailyRecordStore(client, configuration.bucket, configuration.prefix),
+            )
+            await cache.refresh()
+            application.state.daily_cache = cache
+            application.state.store = Store(configuration.data_dir, daily_source=cache)
+            refresh_task = asyncio.create_task(refresh_daily_cache(cache, refresh_interval))
+            yield
+        except BaseException as error:
+            primary_error = error
+            raise
+        finally:
+            if refresh_task is not None:
+                refresh_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await refresh_task
+            if clients:
+                try:
+                    await run_in_thread(clients[0].close)
+                except BaseException as error:
+                    if primary_error is None:
+                        raise
+                    primary_error.add_note(f"S3 client cleanup failed: {type(error).__name__}")
+
+    application = FastAPI(title=config.SITE_NAME, docs_url=None, redoc_url=None, lifespan=lifespan)
+    application.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
+    application.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    application.include_router(router)
+    return application
+
+
+app = create_app()

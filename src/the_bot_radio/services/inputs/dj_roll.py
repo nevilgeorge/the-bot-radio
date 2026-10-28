@@ -1,16 +1,18 @@
-"""The DJ roll: picks today's resident DJ from data/personas.json. No external API.
+"""The DJ roll: picks today's resident DJ from local data/personas.json.
 
 The pick is a seeded random choice (seed = ``run_date.toordinal()``), so re-running a
 day always rolls the same DJ, in any process. Yesterday's DJ (read from
-``data/days/<yesterday>.json``) is excluded whenever there are at least two personas.
+``data/days/<yesterday>.json`` by default) is excluded whenever there are at least two
+personas. An injected daily reader may supply remote history; its caller owns the
+reader and any underlying client, and remote read failures propagate to the runner.
 """
 
 import json
 import random
 from collections.abc import Sequence
-from datetime import timedelta
+from datetime import date, timedelta
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Protocol
 
 from pydantic import TypeAdapter
 
@@ -20,13 +22,31 @@ from the_bot_radio.web.models import Persona
 _persona_list_adapter = TypeAdapter(list[Persona])
 
 
+class DailyHistoryReader(Protocol):
+    """Read yesterday's original bytes without owning a storage client."""
+
+    async def read(self, run_date: date) -> bytes | None:
+        """Return daily bytes or None for a missing record; propagate read failures."""
+        ...
+
+
+def _dj_from_payload(payload: str | bytes | None) -> str | None:
+    """Extract a string DJ from any standalone record, ignoring malformed payloads."""
+    if payload is None:
+        return None
+    try:
+        dj_id = json.loads(payload).get("dj")
+    except (ValueError, AttributeError):
+        return None
+    return dj_id if isinstance(dj_id, str) else None
+
+
 def _yesterdays_dj(day_record_path: Path) -> str | None:
     """The `dj` id from a day record; None if the file is missing or unreadable."""
     try:
-        dj_id = json.loads(day_record_path.read_text()).get("dj")
-    except (OSError, ValueError, AttributeError):
+        return _dj_from_payload(day_record_path.read_bytes())
+    except OSError:
         return None
-    return dj_id if isinstance(dj_id, str) else None
 
 
 class DjRollService:
@@ -35,11 +55,20 @@ class DjRollService:
     key: ClassVar[str] = "dj_roll"
     label: ClassVar[str] = "The DJ roll"
 
+    def __init__(self, daily_reader: DailyHistoryReader | None = None) -> None:
+        """Use local history by default, or an injected caller-owned daily reader."""
+        self.daily_reader = daily_reader
+
     async def fetch(self, ctx: RunContext) -> Reading:
         """Pick a persona deterministically for `ctx.run_date`."""
         personas = _persona_list_adapter.validate_json((ctx.data_dir / "personas.json").read_text())
         yesterday = ctx.run_date - timedelta(days=1)
-        yesterdays_dj_id = _yesterdays_dj(ctx.data_dir / "days" / f"{yesterday.isoformat()}.json")
+        if self.daily_reader is None:
+            yesterdays_dj_id = _yesterdays_dj(
+                ctx.data_dir / "days" / f"{yesterday.isoformat()}.json"
+            )
+        else:
+            yesterdays_dj_id = _dj_from_payload(await self.daily_reader.read(yesterday))
         return self.roll(ctx, personas, yesterdays_dj_id)
 
     def roll(

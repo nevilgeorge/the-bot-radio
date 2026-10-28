@@ -1,9 +1,11 @@
 """Offline preparation coverage for frozen evidence and trusted run references."""
 
+import asyncio
 import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock
 
 import httpx
@@ -12,6 +14,8 @@ import pytest
 from the_bot_radio.catalog import CatalogTrack
 from the_bot_radio.generation import preparation
 from the_bot_radio.generation.models import DailyRecord
+from the_bot_radio.generation.runtime import RunRecorder
+from the_bot_radio.generation.storage import LocalRunArtifactStore
 from the_bot_radio.services.inputs.base import TZ, Reading
 from the_bot_radio.web.models import Mood
 
@@ -312,3 +316,226 @@ async def test_mood_failure_propagates(tmp_path, fake_readings):
     diagnostics = json.loads((tmp_path / "run/diagnostics.json").read_text())
     assert diagnostics["inputs"][1]["raw"] == {"forecast": "retained"}
     assert "mood_usage" not in diagnostics
+
+
+class MemoryDailyStore:
+    """Serve history bytes while recording concurrency and requested dates."""
+
+    def __init__(self, records: dict[date, bytes]) -> None:
+        """Keep independent source bytes for preparation's storage boundary."""
+        self.records = records
+        self.requested_dates: list[date] = []
+        self.active_reads = 0
+        self.peak_reads = 0
+
+    def storage_location(self, run_date: date) -> str:
+        """Compute the canonical fake URI without accessing stored bytes."""
+        return f"memory://days/{run_date}.json"
+
+    async def read(self, run_date: date) -> bytes | None:
+        """Yield so simultaneous requests and out-of-order completions are observable."""
+        self.requested_dates.append(run_date)
+        self.active_reads += 1
+        self.peak_reads = max(self.peak_reads, self.active_reads)
+        try:
+            await asyncio.sleep(0.001 * (run_date.day % 3))
+            return self.records.get(run_date)
+        finally:
+            self.active_reads -= 1
+
+    async def create(self, run_date: date, content: bytes) -> str:
+        """Reject writes because history preparation is read-only."""
+        raise AssertionError("preparation must not write daily records")
+
+
+@pytest.mark.parametrize("history_days", [0, 7, 30])
+async def test_injected_history_boundaries_and_coverage(history_days: int) -> None:
+    """Empty, partial, and complete windows preserve chronological metadata."""
+    included_dates = [RUN_DATE - timedelta(days=days) for days in range(history_days, 0, -1)]
+    records = {
+        playlist_date: json.dumps(published_record(playlist_date)).encode()
+        for playlist_date in included_dates
+    }
+    records[RUN_DATE] = b"must not read today"
+    records[RUN_DATE - timedelta(days=31)] = b"must not read before window"
+    daily_store = MemoryDailyStore(records)
+    snapshots, coverage = await preparation._load_history(daily_store, RUN_DATE)
+    expected_dates = [RUN_DATE - timedelta(days=days) for days in range(30, 0, -1)]
+    assert daily_store.requested_dates == expected_dates
+    assert daily_store.peak_reads == 5
+    assert daily_store.active_reads == 0
+    assert [snapshot.record.date for snapshot in snapshots] == included_dates
+    assert coverage == {
+        "window_start": expected_dates[0].isoformat(),
+        "window_end_exclusive": RUN_DATE.isoformat(),
+        "included_dates": [playlist_date.isoformat() for playlist_date in included_dates],
+        "missing_dates": [
+            playlist_date.isoformat()
+            for playlist_date in expected_dates
+            if playlist_date not in included_dates
+        ],
+        "excluded_dates": [],
+        "incomplete": history_days < 30,
+    }
+
+
+async def test_injected_history_bytes_and_diagnostics_callback(tmp_path, fake_readings):
+    """Storage bytes become the snapshot unchanged and callback receives diagnostic updates."""
+    data_dir = tmp_path / "data"
+    write_sources(data_dir)
+    yesterday = RUN_DATE - timedelta(days=1)
+    original_content = (" \n" + json.dumps(published_record(yesterday), indent=3) + " \n").encode()
+    daily_store = MemoryDailyStore(
+        {
+            yesterday: original_content,
+            RUN_DATE - timedelta(days=2): b'{"publication_status": "pending"}',
+            RUN_DATE - timedelta(days=3): b'{"dj": "legacy"}',
+        }
+    )
+    updates: list[dict[str, Any]] = []
+
+    def diagnostics_sink(**values: Any) -> None:
+        """Capture separate synchronous preparation updates."""
+        updates.append(values)
+
+    mood_service = SimpleNamespace(
+        score_mood=AsyncMock(return_value=Mood(tempo_bpm=90, energy=4, brightness=3, obscurity=7)),
+        last_mood_usage={"input_tokens": 20},
+    )
+    async with httpx.AsyncClient() as client:
+        result = await preparation.prepare_run(
+            data_dir,
+            tmp_path / "run",
+            RUN_DATE,
+            NOW,
+            client,
+            mood_service,
+            daily_store=daily_store,
+            diagnostics_sink=diagnostics_sink,
+        )
+    assert (
+        result.workspace / f"history/{yesterday.isoformat()}.json"
+    ).read_bytes() == original_content
+    assert result.persona.id == "resident-1"
+    assert result.context.recent_track_ids == frozenset(
+        f"{100 + index:022d}" for index in range(10)
+    )
+    context = json.loads((result.workspace / "context.json").read_bytes())
+    assert context["history"]["excluded_dates"] == ["2026-10-24", "2026-10-25"]
+    assert len(updates) == 2
+    assert updates[0]["inputs"][1]["raw"] == {"forecast": "retained"}
+    assert updates[1] == {"mood_usage": {"input_tokens": 20}}
+    assert not (result.artifact_dir / "diagnostics.json").exists()
+
+
+@pytest.mark.parametrize(
+    "content, message",
+    [
+        (b"not json", "Expecting value"),
+        (b"[]", "invalid history record"),
+        (b'{"publication_status": "published"}', "validation errors"),
+        (
+            json.dumps(published_record(RUN_DATE - timedelta(days=2))).encode(),
+            "date does not match filename",
+        ),
+    ],
+)
+async def test_injected_invalid_history_fails(content: bytes, message: str) -> None:
+    """Malformed payloads and invalid published records cannot silently shrink history."""
+    daily_store = MemoryDailyStore({RUN_DATE - timedelta(days=1): content})
+    with pytest.raises(ValueError, match=message):
+        await preparation._load_history(daily_store, RUN_DATE)
+    assert daily_store.active_reads == 0
+
+
+@pytest.mark.parametrize("cancel_loading", [False, True])
+async def test_history_failure_cancels_and_awaits_outstanding_reads(cancel_loading: bool) -> None:
+    """Both storage failures and caller cancellation drain all in-flight reads."""
+    reads_started = asyncio.Event()
+    release_failure = asyncio.Event()
+    active_dates: set[date] = set()
+    cancelled_dates: set[date] = set()
+
+    class BlockingDailyStore(MemoryDailyStore):
+        """Hold five reads so failure cleanup is measured deterministically."""
+
+        async def read(self, run_date: date) -> bytes | None:
+            """Fail the first read or block until preparation cancels it."""
+            active_dates.add(run_date)
+            if len(active_dates) == 5:
+                reads_started.set()
+            try:
+                if run_date == RUN_DATE - timedelta(days=30):
+                    await release_failure.wait()
+                    raise PermissionError("storage unavailable")
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled_dates.add(run_date)
+                raise
+            finally:
+                active_dates.remove(run_date)
+
+    load_task = asyncio.create_task(preparation._load_history(BlockingDailyStore({}), RUN_DATE))
+    await asyncio.wait_for(reads_started.wait(), timeout=1)
+    if cancel_loading:
+        load_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await load_task
+    else:
+        release_failure.set()
+        with pytest.raises(PermissionError, match="storage unavailable"):
+            await load_task
+    assert not active_dates
+    assert len(cancelled_dates) >= 4
+
+
+async def test_history_payload_is_parsed_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Filtering and validation share one decoded payload per downloaded day."""
+    yesterday = RUN_DATE - timedelta(days=1)
+    content = json.dumps(published_record(yesterday)).encode()
+    original_loads = json.loads
+    parsed_payloads: list[bytes] = []
+
+    def counted_loads(payload: bytes) -> Any:
+        """Track history decoding without altering its semantics."""
+        parsed_payloads.append(payload)
+        return original_loads(payload)
+
+    monkeypatch.setattr(preparation.json, "loads", counted_loads)
+    snapshots, _ = await preparation._load_history(MemoryDailyStore({yesterday: content}), RUN_DATE)
+    assert parsed_payloads == [content]
+    assert snapshots[0].content is content
+
+
+async def test_preparation_diagnostics_work_with_run_recorder(tmp_path, fake_readings):
+    """Preparation's synchronous callback integrates with persisted run checkpoints."""
+    data_dir = tmp_path / "data"
+    write_sources(data_dir)
+    artifact_dir = tmp_path / "local-run"
+    remote_dir = tmp_path / "stored-artifacts"
+    recorder = RunRecorder(LocalRunArtifactStore(remote_dir), RUN_DATE, "integration", artifact_dir)
+    mood_service = SimpleNamespace(
+        score_mood=AsyncMock(return_value=Mood(tempo_bpm=90, energy=4, brightness=3, obscurity=7))
+    )
+    async with recorder:
+        await recorder.start(purpose="preparation integration")
+        async with httpx.AsyncClient() as client:
+            result = await preparation.prepare_run(
+                data_dir,
+                artifact_dir,
+                RUN_DATE,
+                NOW,
+                client,
+                mood_service,
+                daily_store=MemoryDailyStore({}),
+                diagnostics_sink=recorder.update_diagnostics,
+            )
+        await recorder.finish("prepared")
+    stored_run = remote_dir / "runs/2026-10-27/integration"
+    diagnostics = json.loads((stored_run / "diagnostics.json").read_bytes())
+    assert diagnostics["status"] == "prepared"
+    assert diagnostics["inputs"][1]["raw"] == {"forecast": "retained"}
+    assert diagnostics["mood_usage"] == {}
+    assert (stored_run / "workspace/context.json").read_bytes() == (
+        result.workspace / "context.json"
+    ).read_bytes()

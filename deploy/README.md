@@ -130,3 +130,32 @@ uv run pytest tests/test_deploy_site.py -q
 
 Tests mock external commands and cover packaging, seeding, initialization failures,
 data preservation, rollback, and concurrent deployment rejection.
+
+
+## Optional S3 daily reads
+
+Local files remain the default. A separately authorized deployment may set
+`BOT_RADIO_S3_BUCKET` and optional `BOT_RADIO_S3_PREFIX` in the service environment,
+with the normal SDK credential and region configuration. This implementation and its
+staging qualification do not switch production or deploy the website.
+
+Grant the website `s3:GetObject` only on the configured `days/*` objects and
+`s3:ListBucket` with `s3:prefix` constrained to the exact `<prefix>/days/` listing.
+Do not grant artifact access, writes, or deletion. Generation and qualification use
+separate credentials with daily/artifact read/write permissions and necessary listing;
+qualification writes only beneath `<prefix>/qualification/<uuid>/`.
+
+Keep `personas.json` and `inputs.json` under `BOT_RADIO_DATA_DIR` even in S3 mode;
+the catalog also stays local for generation. The initial remote load must succeed before
+startup completes. Empty or entirely hidden/invalid data is allowed. Later refreshes wait
+300 seconds after the preceding attempt, retain the last complete snapshot on infrastructure
+failure, and log failures/recovery. `/healthz` reports the latest cached visible day and
+continues returning its existing successful response even when that cache is stale. Check
+application logs when investigating freshness. Shutdown drains workers before closing the SDK.
+
+Use `RUN_LIVE=1 uv run pytest -m s3_live -s` with explicitly configured staging bucket
+and existing credentials before separately considering adoption. Intended staging is
+`the-bot-radio-staging-data` in `us-east-1`. Tests print unique retained locations and
+never delete objects or versions; retained data consumes storage. See
+[the S3 dev plan](../docs/dev_plans/daily_files_s3.md) for evidence and limitations.
+Publishing, scheduling, migration, IAM provisioning, and retention changes are separate work.

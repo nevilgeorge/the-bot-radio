@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shutil
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Protocol
 
 import httpx
 from pydantic import TypeAdapter
@@ -21,6 +23,7 @@ from the_bot_radio.generation.models import (
     normalize_artist,
 )
 from the_bot_radio.generation.runtime import update_diagnostics
+from the_bot_radio.generation.storage import DailyRecordStore, LocalDailyRecordStore
 from the_bot_radio.services.inputs import SERVICES, runner
 from the_bot_radio.services.inputs.base import TZ, Reading, RunContext
 from the_bot_radio.services.inputs.dj_roll import DjRollService
@@ -42,37 +45,77 @@ class PreparedRun:
     generated_at: datetime
 
 
+class DiagnosticsSink(Protocol):
+    """Accept synchronous diagnostic updates from preparation."""
+
+    def __call__(self, **updates: Any) -> None:
+        """Merge diagnostic keyword updates into the current run."""
+        ...
+
+
+@dataclass(frozen=True)
+class HistorySnapshot:
+    """A validated published record together with its original stored bytes."""
+
+    record: DailyRecord
+    content: bytes
+
+
 def _write_json(path: Path, payload: object) -> None:
     """Write a readable JSON artifact inside a newly prepared run directory."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def _load_history(data_dir: Path, run_date: date) -> tuple[list[DailyRecord], dict[str, object]]:
-    """Read strict explicitly published records, excluding pending and legacy fixtures."""
-    records: list[DailyRecord] = []
+async def _load_history(
+    daily_store: DailyRecordStore, run_date: date
+) -> tuple[list[HistorySnapshot], dict[str, object]]:
+    """Read the preceding 30 dates with bounded concurrency and strict validation."""
+    read_semaphore = asyncio.Semaphore(5)
+
+    async def read_day(playlist_date: date) -> tuple[date, HistorySnapshot | None, bool]:
+        """Fetch and parse one day once, retaining its unmodified payload."""
+        async with read_semaphore:
+            content = await daily_store.read(playlist_date)
+            if content is None:
+                return playlist_date, None, False
+            payload = json.loads(content)
+            filename = f"{playlist_date.isoformat()}.json"
+            if not isinstance(payload, dict):
+                raise ValueError(f"invalid history record: {filename}")
+            if payload.get("publication_status") != "published":
+                return playlist_date, None, True
+            record = DailyRecord.model_validate(payload)
+            if record.date != playlist_date:
+                raise ValueError(f"history date does not match filename: {filename}")
+            return playlist_date, HistorySnapshot(record, content), False
+
+    read_tasks = [
+        asyncio.create_task(read_day(run_date - timedelta(days=days_before)))
+        for days_before in range(30, 0, -1)
+    ]
+    try:
+        results = await asyncio.gather(*read_tasks)
+    except BaseException:
+        for read_task in read_tasks:
+            read_task.cancel()
+        await asyncio.gather(*read_tasks, return_exceptions=True)
+        raise
+
+    snapshots: list[HistorySnapshot] = []
     missing_dates: list[str] = []
     excluded_dates: list[str] = []
-    for days_before in range(30, 0, -1):
-        playlist_date = run_date - timedelta(days=days_before)
-        path = data_dir / "days" / f"{playlist_date.isoformat()}.json"
-        if not path.exists():
-            missing_dates.append(playlist_date.isoformat())
-            continue
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError(f"invalid history record: {path.name}")
-        if payload.get("publication_status") != "published":
+    for playlist_date, snapshot, excluded in results:
+        if excluded:
             excluded_dates.append(playlist_date.isoformat())
-            continue
-        record = DailyRecord.model_validate(payload)
-        if record.date != playlist_date:
-            raise ValueError(f"history date does not match filename: {path.name}")
-        records.append(record)
-    return records, {
+        elif snapshot is None:
+            missing_dates.append(playlist_date.isoformat())
+        else:
+            snapshots.append(snapshot)
+    return snapshots, {
         "window_start": (run_date - timedelta(days=30)).isoformat(),
         "window_end_exclusive": run_date.isoformat(),
-        "included_dates": [record.date.isoformat() for record in records],
+        "included_dates": [snapshot.record.date.isoformat() for snapshot in snapshots],
         "missing_dates": missing_dates,
         "excluded_dates": excluded_dates,
         "incomplete": bool(missing_dates or excluded_dates),
@@ -104,6 +147,9 @@ async def prepare_run(
     now: datetime,
     http_client: httpx.AsyncClient,
     claude_service: ClaudeService,
+    *,
+    daily_store: DailyRecordStore | None = None,
+    diagnostics_sink: DiagnosticsSink | None = None,
 ) -> PreparedRun:
     """Freeze inputs, roll the DJ from published history, and compute the fixed mood."""
     if now.tzinfo is None or now.utcoffset() is None:
@@ -119,7 +165,15 @@ async def prepare_run(
     catalog = load_catalog(catalog_snapshot)
     if not catalog:
         raise ValueError("shared catalog is missing or empty")
-    history, coverage = _load_history(data_dir, run_date)
+    history_snapshots, coverage = await _load_history(
+        daily_store if daily_store is not None else LocalDailyRecordStore(data_dir), run_date
+    )
+    history = [snapshot.record for snapshot in history_snapshots]
+    diagnostic_callback = (
+        diagnostics_sink
+        if diagnostics_sink is not None
+        else partial(update_diagnostics, artifact_dir)
+    )
     recent_track_ids = frozenset(track.spotify_id for record in history for track in record.tracks)
     eligible_artists = {
         normalize_artist(track.artists[0])
@@ -139,14 +193,13 @@ async def prepare_run(
         run_context, services=[service for service in SERVICES if service.key != "dj_roll"]
     )
     audit_readings = [dj_reading, *other_readings]
-    update_diagnostics(
-        artifact_dir,
+    diagnostic_callback(
         inputs=[reading.model_dump(mode="json") for reading in audit_readings],
     )
     sanitized_dj = dj_reading.model_copy(update={"data": {"persona_id": persona.id}})
     readings: tuple[Reading, ...] = (sanitized_dj, *other_readings)
     scored_mood = await claude_service.score_mood(readings)
-    update_diagnostics(artifact_dir, mood_usage=getattr(claude_service, "last_mood_usage", {}))
+    diagnostic_callback(mood_usage=getattr(claude_service, "last_mood_usage", {}))
     mood = PlaylistMood.model_validate(scored_mood.model_dump())
     context = ValidationContext(
         run_date=run_date,
@@ -159,10 +212,9 @@ async def prepare_run(
 
     workspace_history = workspace / "history"
     workspace_history.mkdir(parents=True, exist_ok=True)
-    for record in history:
-        _write_json(
-            workspace / "history" / f"{record.date.isoformat()}.json",
-            record.model_dump(mode="json"),
+    for snapshot in history_snapshots:
+        (workspace_history / f"{snapshot.record.date.isoformat()}.json").write_bytes(
+            snapshot.content
         )
     _write_json(
         workspace / "context.json",

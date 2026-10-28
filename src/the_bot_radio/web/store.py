@@ -1,8 +1,9 @@
-"""File-backed store for daily playlists, personas and input descriptions.
+"""Synchronous local or memory-backed daily views with local static inputs.
 
-Reads ``data/days/*.json``, ``data/personas.json`` and ``data/inputs.json``. Parsed data is
-cached and re-read only when the files' (name, mtime) signature changes, so the pipeline can
-drop a new day file without a restart. Invalid files are logged and skipped, never raised.
+Local daily records reload on filename/mtime changes. An injected snapshot source
+replaces daily file reads with completed memory snapshots; public methods never
+perform remote requests. Personas and input descriptions always retain local hot
+reload. Invalid local files are logged and skipped.
 """
 
 import json
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from .daily_cache import DailySnapshotSource
 from .models import Day, InputDescription, Persona
 
 log = logging.getLogger(__name__)
@@ -32,7 +34,9 @@ def _mtime(path: Path) -> int | None:
 
 
 class Store:
-    def __init__(self, data_dir: Path) -> None:
+    def __init__(self, data_dir: Path, daily_source: DailySnapshotSource | None = None) -> None:
+        """Use local hot reload unless a synchronous snapshot source is supplied."""
+        self._daily_source = daily_source
         self.data_dir = Path(data_dir)
         self._lock = threading.Lock()
         self._days_sig: Signature | None = None
@@ -63,10 +67,14 @@ class Store:
 
     def _refresh(self) -> None:
         with self._lock:
-            sig = self._days_signature()
-            if sig != self._days_sig:
-                self._load_days()
-                self._days_sig = sig
+            if self._daily_source is not None:
+                self._by_date = self._daily_source.days()
+                self._days = sorted(self._by_date.values(), key=lambda day: day.date, reverse=True)
+            else:
+                sig = self._days_signature()
+                if sig != self._days_sig:
+                    self._load_days()
+                    self._days_sig = sig
 
             psig = _mtime(self.data_dir / "personas.json")
             if psig != self._personas_sig:

@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from the_bot_radio.web.main import app, get_store
+from the_bot_radio.generation.config import GenerationStorageConfig
+from the_bot_radio.web.main import create_app, get_store
 from the_bot_radio.web.store import Store
 
 REPO_DATA = Path(__file__).resolve().parents[1] / "data"
@@ -22,6 +23,7 @@ def site_data_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def client(site_data_dir: Path) -> Iterator[TestClient]:
+    app = create_app(GenerationStorageConfig(site_data_dir, None, "", site_data_dir / "runs"))
     store = Store(site_data_dir)
     app.dependency_overrides[get_store] = lambda: store
     try:
@@ -41,5 +43,5 @@ def pytest_collection_modifyitems(config, items):
         return
     skip = pytest.mark.skip(reason="live API test; set RUN_LIVE=1 to run")
     for item in items:
-        if "live" in item.keywords:
+        if "live" in item.keywords or "s3_live" in item.keywords:
             item.add_marker(skip)

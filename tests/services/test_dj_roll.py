@@ -5,8 +5,10 @@ import sys
 from collections import Counter
 from datetime import date, timedelta
 
+import httpx
 import pytest
 
+from the_bot_radio.services.inputs import runner
 from the_bot_radio.services.inputs.dj_roll import DjRollService
 from the_bot_radio.web.models import Persona
 
@@ -140,3 +142,63 @@ async def test_roll_and_fetch_share_the_same_algorithm(make_ctx, tmp_path):
     ctx = make_ctx(run_date=DAY)
     service = DjRollService()
     assert service.roll(ctx, personas, previous_dj_id="resident-01") == await service.fetch(ctx)
+
+
+class FakeDailyReader:
+    """Supply remote history while recording the requested dates."""
+
+    def __init__(self, payload: bytes | None, error: Exception | None = None) -> None:
+        """Retain bytes or an infrastructure failure for the next read."""
+        self.payload = payload
+        self.error = error
+        self.requested_dates: list[date] = []
+
+    async def read(self, run_date: date) -> bytes | None:
+        """Record the requested date and return the configured result."""
+        self.requested_dates.append(run_date)
+        if self.error is not None:
+            raise self.error
+        return self.payload
+
+
+async def test_injected_history_overrides_local_history(make_ctx, tmp_path):
+    """Standalone remote history needs only a DJ string, including pending records."""
+    write_personas(tmp_path, 4)
+    yesterday = DAY - timedelta(days=1)
+    write_day(tmp_path, yesterday, '{"dj":"resident-02"}')
+    daily_reader = FakeDailyReader(b'{"dj":"resident-01", "publication_status":"pending"}')
+    reading = await DjRollService(daily_reader=daily_reader).fetch(make_ctx(run_date=DAY))
+    assert reading.data["excluded"] == ["resident-01"]
+    assert "resident-01" not in reading.data["candidates"]
+    assert "resident-02" in reading.data["candidates"]
+    assert daily_reader.requested_dates == [yesterday]
+
+
+@pytest.mark.parametrize(
+    "payload", [None, b"invalid {", b"[1,2]", b"null", b'{"dj":1}', b"{}", b"\xff"]
+)
+async def test_missing_or_malformed_remote_history_has_no_local_fallback(
+    make_ctx, tmp_path, payload: bytes | None
+):
+    """Absent or malformed remote records must not consult an available local record."""
+    ids = write_personas(tmp_path, 4)
+    write_day(tmp_path, DAY - timedelta(days=1), '{"dj":"resident-01"}')
+    reading = await DjRollService(daily_reader=FakeDailyReader(payload)).fetch(
+        make_ctx(run_date=DAY)
+    )
+    assert reading.data["excluded"] == []
+    assert reading.data["candidates"] == ids
+
+
+@pytest.mark.parametrize("error", [PermissionError("denied"), httpx.ConnectError("unavailable")])
+async def test_remote_failures_propagate_and_runner_skips(make_ctx, tmp_path, error: Exception):
+    """Infrastructure errors fail the input rather than silently using local history."""
+    write_personas(tmp_path, 4)
+    write_day(tmp_path, DAY - timedelta(days=1), '{"dj":"resident-01"}')
+    service = DjRollService(daily_reader=FakeDailyReader(None, error=error))
+    context = make_ctx(run_date=DAY)
+    with pytest.raises(type(error), match=str(error)):
+        await service.fetch(context)
+    readings = await runner.read_all(context, [service])
+    assert readings[0].status == "skipped"
+    assert readings[0].error == f"{type(error).__name__}: {error}"

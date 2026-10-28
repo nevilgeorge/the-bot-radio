@@ -194,8 +194,9 @@ def test_record_rejects_duplicate_primary_artists() -> None:
 
 
 def test_legacy_website_fixtures_remain_display_compatible() -> None:
-    paths = sorted((REPO_DATA / "days").glob("*.json"))
-    assert paths
+    # Only the checked-in legacy fixtures belong to this assertion; local generation
+    # also writes modern daily records into this gitignored directory.
+    paths = [REPO_DATA / "days" / f"2026-10-{day:02d}.json" for day in range(15, 27)]
     for path in paths:
         day = Day.model_validate_json(path.read_text())
         assert day.publication_status is None

@@ -242,3 +242,42 @@ def test_explicitly_published_day_without_playlist_id_is_hidden(data_dir: Path) 
     invalid_day.update(publication_status="published", spotify_playlist_id=None)
     (data_dir / "days" / "2026-10-03.json").write_text(json.dumps(invalid_day))
     assert Store(data_dir).get_day(date(2026, 10, 3)) is None
+
+
+def test_snapshot_source_preserves_all_views_and_local_static_reload(data_dir: Path) -> None:
+    """All public views use memory while personas and input descriptions stay local."""
+    from unittest.mock import Mock
+
+    from the_bot_radio.web.models import Day
+
+    records = {
+        date.fromisoformat(day_date): Day.model_validate(make_day(day_date, dj=dj))
+        for day_date, dj in [
+            ("2026-09-29", "resident-01"),
+            ("2026-10-01", "resident-02"),
+            ("2026-10-03", "resident-01"),
+        ]
+    }
+    source = Mock()
+    source.days.side_effect = lambda: records.copy()
+    store = Store(data_dir, daily_source=source)
+    store._days_signature = Mock(side_effect=AssertionError("local daily files inspected"))
+    assert store.latest_day().date == date(2026, 10, 3)
+    assert store.get_day(date(2026, 10, 2)) is None
+    assert [day.date.day for day in store.list_days()] == [3, 1, 29]
+    assert [day.date.day for day in store.list_days(dj="resident-01", month="2026-10")] == [3]
+    assert store.months() == ["2026-10", "2026-09"]
+    assert store.months(dj="resident-02") == ["2026-10"]
+    previous, following = store.prev_next(date(2026, 10, 1))
+    assert previous.date == date(2026, 9, 29)
+    assert following.date == date(2026, 10, 3)
+    assert store.resident_stats("resident-01") == (2, date(2026, 10, 3))
+    assert store.persona("resident-03") is not None
+    assert len(store.input_descriptions()) == 2
+    (data_dir / "personas.json").write_text("[]")
+    (data_dir / "inputs.json").write_text("[]")
+    assert store.personas() == []
+    assert store.input_descriptions() == []
+    records.clear()
+    assert store.latest_day() is None
+    assert store.list_days() == []

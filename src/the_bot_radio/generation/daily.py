@@ -1,68 +1,37 @@
-"""Generate a daily playlist file; Spotify publication is a separate operation.
+"""Generate a pending daily record through injected storage interfaces.
 
-Filesystem layout (``data_dir`` defaults to the repository's ``data/`` directory)::
-
-    data/
-    ├── personas.json                   All resident definitions, read by setup code.
-    ├── inputs.json                     Input descriptions used by the website.
-    ├── shared_catalog.jsonl            Canonical shared song catalog.
-    ├── days/
-    │   └── YYYY-MM-DD.json              Validated daily record, initially pending publication.
-    └── runs/
-        └── YYYY-MM-DD/
-            ├── generation.lock         Prevents concurrent generation for this date.
-            └── <run-id>/               A distinct directory for every generation run.
-                ├── proposal.json       Schema-valid final response before assembly.
-                ├── transcript.jsonl    SDK messages, tools, usage, and validation events.
-                ├── diagnostics.json    Status, raw readings, mood usage, and failure details.
-                ├── search_results.json Canonical Spotify evidence for wildcard verification.
-                └── workspace/          The only subtree the agent can read.
-                    ├── context.json    Date, DJ ID, mood, readings, and history coverage.
-                    ├── catalog.jsonl   Fixed copy of the shared catalog for this run.
-                    ├── history/
-                    │   └── YYYY-MM-DD.json  Published records from the preceding 30 days.
-                    └── schemas/
-                        └── playlist_proposal.schema.json  Required agent response fields.
-
-Permanent inputs and accepted daily records live directly under ``data_dir``. Each run has
-its own diagnostic artifacts and fixed evidence snapshot. Setup reads ``personas.json`` once;
-only the selected persona is sent in the prompt, with no persona files copied into the run.
-
-The host saves schema-valid final output from a successful SDK result to ``proposal.json``
-before resource and playlist validation. The file can therefore contain an invalid selection
-on a failed run; ``diagnostics.json`` records whether the run was accepted. Malformed responses
-remain in the transcript. ``PlaylistAgent`` runs one task and returns the accepted proposal
-and archived prompt; it never sends a host repair prompt after final validation fails. The daily
-job adds trusted run metadata once, validates the assembled record, and saves
-``days/<date>.json`` atomically only after acceptance. The agent cannot write any of these
-files, read sibling run artifacts, or publish a Spotify playlist.
-
-Diagnostics begins with status ``running`` and retains raw readings and mood usage as setup
-progresses, then finishes with status ``accepted`` or ``failed``. Early failures may leave no
-workspace, proposal, or search evidence. Separate run IDs preserve failed attempts; an existing
-accepted daily record makes a rerun a no-op. Older run layouts remain untouched.
+Each invocation retains evidence in data/.run-staging/<date>/<run-id>/ and
+checkpoints snapshots to data/runs/<date>/<run-id>/ by default. Canonical
+records are created once through DailyRecordStore. Skips are audited too.
+One generation job at a time is assumed; no generation lock is used.
+Recover failed uploads with runtime.recover_run_artifacts using the original
+run identity and retained staging directory, without regenerating the day.
 """
 
 import argparse
 import asyncio
-import fcntl
 import os
 import sys
-import tempfile
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import date, datetime
 from pathlib import Path
 
 from the_bot_radio.generation.agent import PlaylistAgent
+from the_bot_radio.generation.config import GenerationStorageConfig, generation_stores
 from the_bot_radio.generation.models import DailyRecord
 from the_bot_radio.generation.preparation import PreparedRun, prepare_run
 from the_bot_radio.generation.runtime import (
     AgentLimits,
-    LogTranscript,
+    RunRecorder,
     update_diagnostics,
     write_json_atomic,
+)
+from the_bot_radio.generation.storage import (
+    DailyRecordStore,
+    LocalDailyRecordStore,
+    LocalRunArtifactStore,
+    RecordExists,
+    RunArtifactStore,
 )
 from the_bot_radio.generation.validation import PlaylistValidator, assemble_daily_record
 from the_bot_radio.services.claude_service import MODEL, ClaudeService
@@ -71,54 +40,14 @@ from the_bot_radio.services.spotify_service import SpotifyService
 from the_bot_radio.web.config import DATA_DIR
 
 
-@contextmanager
-def generation_lock(data_dir: Path, run_date: date) -> Iterator[None]:
-    """Hold a stable nonblocking per-day lock through final acceptance and saving."""
-    lock_path = data_dir / "runs" / run_date.isoformat() / "generation.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with lock_path.open("a") as lock_file:
-        try:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise ValueError("another generation is running for this date") from error
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-
-
-def existing_record(path: Path, run_date: date) -> DailyRecord | None:
-    """Return a valid accepted output, refusing to replace malformed existing data."""
-    if not path.exists():
-        return None
+def validate_existing_record(content: bytes, run_date: date) -> None:
+    """Refuse malformed or misdated canonical data instead of replacing it."""
     try:
-        record = DailyRecord.model_validate_json(path.read_bytes())
+        record = DailyRecord.model_validate_json(content)
         if record.date != run_date:
-            raise ValueError("record date differs from filename")
-    except (ValueError, OSError) as error:
-        raise ValueError(f"existing daily file is invalid: {path.name}") from error
-    return record
-
-
-def save_daily_record(path: Path, record: DailyRecord) -> None:
-    """Publish one complete accepted file atomically without replacing an existing day."""
-    # Reparse even typed records so mutations cannot bypass persistence constraints.
-    accepted_record = DailyRecord.model_validate_json(record.model_dump_json())
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False
-        ) as output_file:
-            temporary_path = Path(output_file.name)
-            output_file.write(accepted_record.model_dump_json(indent=2) + "\n")
-            output_file.flush()
-            os.fsync(output_file.fileno())
-        # Linking is atomic and fails if another writer already created the destination.
-        os.link(temporary_path, path)
-    finally:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
+            raise ValueError("record date differs from requested date")
+    except ValueError as error:
+        raise ValueError("existing daily file is invalid") from error
 
 
 async def generate_day(
@@ -132,32 +61,80 @@ async def generate_day(
     claude_service: ClaudeService | None = None,
     spotify_service: SpotifyService | None = None,
     playlist_agent: PlaylistAgent | None = None,
-) -> Path:
-    """Prepare, run, accept, and persist a day with injectable external services."""
+    daily_store: DailyRecordStore | None = None,
+    artifact_store: RunArtifactStore | None = None,
+    staging_root: Path | None = None,
+) -> str:
+    """Audit one invocation, checkpoint evidence, and create a canonical day once."""
     now = now or datetime.now(TZ)
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("run timestamp must be timezone-aware")
+    now = now.astimezone(TZ)
     limits = limits or AgentLimits()
-    daily_path = data_dir / "days" / f"{run_date.isoformat()}.json"
-    with generation_lock(data_dir, run_date):
-        if existing_record(daily_path, run_date) is not None:
-            return daily_path
-        artifact_dir = data_dir / "runs" / run_date.isoformat() / uuid.uuid4().hex
-        artifact_dir.mkdir(parents=True)
-        transcript = LogTranscript(
-            artifact_dir / "transcript.jsonl", console=sys.stderr if verbose else None
-        )
-        transcript.append({"event": "started", "date": run_date, "now": now, "model": model})
-        update_diagnostics(artifact_dir, status="running", date=run_date, now=now, model=model)
-        prepared: PreparedRun | None = None
+    daily_store = daily_store if daily_store is not None else LocalDailyRecordStore(data_dir)
+    artifact_store = (
+        artifact_store if artifact_store is not None else LocalRunArtifactStore(data_dir)
+    )
+    run_id = uuid.uuid4().hex
+    local_run_dir = (
+        (staging_root if staging_root is not None else data_dir / ".run-staging")
+        / run_date.isoformat()
+        / run_id
+    ).resolve()
+    location = daily_store.storage_location(run_date)
+    recorder = RunRecorder(
+        artifact_store,
+        run_date,
+        run_id,
+        local_run_dir,
+        console=sys.stderr if verbose else None,
+    )
+    prepared: PreparedRun | None = None
+    committed = False
+    started = False
+    status = "failed"
+    outcome: dict[str, object] = {}
+    primary_error: BaseException | None = None
+
+    async def reconcile(content: bytes) -> bool:
+        """Check an ambiguous write once without retrying canonical creation."""
         try:
+            async with asyncio.timeout(5):
+                actual = await daily_store.read(run_date)
+            result = (
+                "exact_match"
+                if actual == content
+                else ("absent" if actual is None else "different_content")
+            )
+        except BaseException as error:
+            result = "read_" + type(error).__name__
+        outcome["reconciliation"] = result
+        return result == "exact_match"
+
+    try:
+        await recorder.start(now=now, model=model, daily_file=location, run_id=run_id)
+        started = True
+        existing = await daily_store.read(run_date)
+        if existing is not None:
+            validate_existing_record(existing, run_date)
+            status = "skipped"
+            outcome["reason"] = "existing_daily_record"
+        else:
             async with make_http_client() as http_client:
                 claude_service = claude_service or ClaudeService()
                 spotify_service = spotify_service or SpotifyService(http_client)
                 prepared = await prepare_run(
-                    data_dir, artifact_dir, run_date, now, http_client, claude_service
+                    data_dir,
+                    local_run_dir,
+                    run_date,
+                    now,
+                    http_client,
+                    claude_service,
+                    daily_store=daily_store,
+                    diagnostics_sink=recorder.update_diagnostics,
                 )
-                transcript.append({"event": "prepared", "mood": prepared.context.mood})
+                recorder.append({"event": "prepared", "mood": prepared.context.mood})
+                await recorder.checkpoint()
                 playlist_agent = playlist_agent or PlaylistAgent(
                     spotify_service, PlaylistValidator(prepared.context)
                 )
@@ -166,12 +143,11 @@ async def generate_day(
                     prompt=prepared.prompt,
                     model=model,
                     limits=limits,
-                    event_sink=transcript.append,
+                    event_sink=recorder.append,
                     proposal_sink=lambda proposal: write_json_atomic(
-                        artifact_dir / "proposal.json", proposal
+                        local_run_dir / "proposal.json", proposal
                     ),
                 )
-                # Validate again at the host boundary and attach trusted run metadata once.
                 record = assemble_daily_record(
                     result.proposal,
                     prepared.context,
@@ -179,21 +155,107 @@ async def generate_day(
                     model,
                     prepared.generated_at,
                 )
-                save_daily_record(daily_path, record)
-            outcome = {"status": "accepted", "daily_file": str(daily_path)}
-        except BaseException as error:
-            outcome = {"status": "failed", "error_type": type(error).__name__}
-            update_diagnostics(artifact_dir, **outcome)
-            transcript.append({"event": "finished", **outcome})
-            raise
-        finally:
-            if prepared is not None:
+                content = (record.model_dump_json(indent=2) + "\n").encode("utf-8")
                 write_json_atomic(
-                    artifact_dir / "search_results.json", prepared.context.search_results
+                    local_run_dir / "search_results.json", prepared.context.search_results
                 )
-        update_diagnostics(artifact_dir, **outcome)
-        transcript.append({"event": "finished", **outcome})
-    return daily_path
+                await recorder.checkpoint()
+                try:
+                    location = await daily_store.create(run_date, content)
+                except RecordExists:
+                    existing = await daily_store.read(run_date)
+                    if existing is None:
+                        raise ValueError("daily record conflict destination is missing") from None
+                    validate_existing_record(existing, run_date)
+                    status = "skipped"
+                    outcome["reason"] = "daily_record_created_elsewhere"
+                except BaseException as error:
+                    # Even cancellation can arrive after a write became visible.
+                    reconciliation_task = asyncio.create_task(reconcile(content))
+                    cancellation_error: asyncio.CancelledError | None = None
+                    while True:
+                        try:
+                            committed = await asyncio.shield(reconciliation_task)
+                            break
+                        except asyncio.CancelledError as cancelled:
+                            cancellation_error = cancelled
+                    if cancellation_error is not None:
+                        raise cancellation_error from error
+                    if isinstance(error, asyncio.CancelledError) or not committed:
+                        raise
+                else:
+                    committed = True
+                if committed:
+                    status = "accepted"
+    except BaseException as error:
+        primary_error = error
+        outcome["error_type"] = type(error).__name__
+    finally:
+        # A partial workspace is included by finish even if preparation never returned.
+        if prepared is not None:
+            try:
+                write_json_atomic(
+                    local_run_dir / "search_results.json", prepared.context.search_results
+                )
+            except BaseException as error:
+                if primary_error is None:
+                    primary_error = error
+                    outcome["error_type"] = type(error).__name__
+                else:
+                    primary_error.add_note(
+                        f"Search evidence archival failed: {type(error).__name__}"
+                    )
+        status = "accepted" if committed else ("failed" if primary_error else status)
+        outcome["daily_file"] = location
+        outcome["committed"] = committed
+        try:
+            async with asyncio.timeout(30):
+                if started:
+                    await recorder.finish(status, **outcome)
+                else:
+                    # Startup failure still leaves a local outcome for recovery.
+                    update_diagnostics(local_run_dir, status=status, **outcome)
+                    recorder.transcript.append({"event": "finished", "status": status, **outcome})
+        except BaseException as error:
+            if primary_error is None:
+                primary_error = error
+                if not committed:
+                    # A skip whose audit cannot be persisted is a failed invocation.
+                    # Keep the local snapshot recoverable even after finish closed.
+                    try:
+                        update_diagnostics(
+                            local_run_dir, status="failed", error_type=type(error).__name__
+                        )
+                        recorder.transcript.append(
+                            {
+                                "event": "finalization_failed",
+                                "status": "failed",
+                                "error_type": type(error).__name__,
+                            }
+                        )
+                    except BaseException as local_error:
+                        primary_error.add_note(
+                            f"Local outcome update failed: {type(local_error).__name__}"
+                        )
+            else:
+                primary_error.add_note(f"Run finalization failed: {type(error).__name__}")
+        finally:
+            try:
+                await recorder.close()
+            except BaseException as error:
+                if primary_error is None:
+                    primary_error = error
+                else:
+                    primary_error.add_note(f"Run cleanup failed: {type(error).__name__}")
+    if primary_error is not None:
+        context = f"Run recovery: run_id={run_id}; staging_directory={local_run_dir}"
+        if committed:
+            context += f"; committed_location={location}"
+        if "reconciliation" in outcome:
+            context += f"; reconciliation={outcome['reconciliation']}"
+        primary_error.add_note(context)
+        raise primary_error
+    return location
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -221,18 +283,29 @@ def main(argv: list[str] | None = None) -> int:
         env_date = os.environ.get("RUN_DATE")
         run_date = arguments.run_date or (date.fromisoformat(env_date) if env_date else now.date())
         limits = AgentLimits(arguments.max_turns, arguments.budget_usd, arguments.deadline_seconds)
-        path = asyncio.run(
-            generate_day(
-                arguments.data_dir,
-                run_date,
-                now=now,
-                model=arguments.model,
-                limits=limits,
-                verbose=arguments.verbose,
-            )
-        )
+        storage_config = GenerationStorageConfig.from_environment(arguments.data_dir, os.environ)
+
+        async def run_generation() -> str:
+            """Own selected stores until generation has finalized its recorder."""
+            async with generation_stores(storage_config) as stores:
+                return await generate_day(
+                    arguments.data_dir,
+                    run_date,
+                    now=now,
+                    model=arguments.model,
+                    limits=limits,
+                    verbose=arguments.verbose,
+                    daily_store=stores.daily_store,
+                    artifact_store=stores.artifact_store,
+                    staging_root=stores.staging_root,
+                )
+
+        path = asyncio.run(run_generation())
     except (Exception, KeyboardInterrupt) as error:
         print(f"Generation failed ({type(error).__name__}); see run artifacts.", file=sys.stderr)
+        for note in getattr(error, "__notes__", ()):
+            if note.startswith("Run recovery:"):
+                print(note, file=sys.stderr)
         return 1
     print(path)
     return 0

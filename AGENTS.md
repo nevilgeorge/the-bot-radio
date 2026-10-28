@@ -1,13 +1,15 @@
 ## Commands
 
 - Lint/format: `uv run ruff check . && uv run ruff format .` (line length 100; `docs/` is excluded)
+- S3 qualification is skipped by default: `RUN_LIVE=1 uv run pytest -m s3_live -s`. Require an explicit bucket; retain all data beneath unique `qualification/<uuid>/` prefixes. No live providers or deletion.
 - Live API tests are skipped by default. Run them with `RUN_LIVE=1 uv run pytest -m live -s`; `tests/services/test_runner.py::test_live_read_all` prints every input's reading for today.
 
 ## Conventions
 
 - All dates/times are America/New_York (`web/config.py` `TZ`). Pass timezone-aware datetimes; in input services use `ctx.run_date` / `ctx.now`, never `date.today()` / `datetime.now()`.
 - Async tests use anyio (not pytest-asyncio) and mock HTTP with respx. Each test module must set `pytestmark = pytest.mark.anyio` itself — a `pytestmark` in conftest.py does not apply.
-- The site and the (future) generation pipeline share one contract: one JSON file per day in `data/days/YYYY-MM-DD.json`, schema in `src/the_bot_radio/web/models.py`. The newest file is the Today page; the store reloads on file changes and skips invalid files.
+- The site and generation pipeline share one JSON contract, with website schema in `src/the_bot_radio/web/models.py`. Local mode uses `data/days/YYYY-MM-DD.json`; S3 mode uses `<prefix>/days/YYYY-MM-DD.json`. The newest visible record is the Today page; local files hot reload, S3 snapshots refresh periodically, and invalid records are logged and skipped.
+- Optional S3 consumers use the same bucket/prefix and SDK configuration as generation. Website lifespan owns one client and a memory cache refreshed 300 seconds after each attempt; startup fails on infrastructure errors, subsequent failures retain the entire snapshot. Store methods never perform remote I/O. Personas and input descriptions remain local. Tests must inject explicit local configuration or fake S3 dependencies, never ambient AWS settings.
 - Weekday/date labels are always derived from dates (`web/view_helpers.py`), never hard-coded in templates or data.
 - Page CSS lives in the single `static/css/site.css` (tokens on `:root`, dark only). Templates use Jinja macros from `templates/partials/`; derived values come from `view_helpers` (exposed to templates as `h`).
 

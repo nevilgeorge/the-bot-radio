@@ -1,15 +1,22 @@
 """SDK limits, read-only filesystem access, and append-only run diagnostics."""
 
+from __future__ import annotations
+
+import asyncio
 import dataclasses
+import hashlib
 import json
 import os
 import tempfile
 from collections.abc import Callable
+from contextlib import AbstractAsyncContextManager
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, TextIO
 
 from pydantic import BaseModel
+
+from the_bot_radio.generation.storage import LocalRunArtifactStore, RunArtifactStore
 
 EventSink = Callable[[dict[str, Any]], None]
 
@@ -168,3 +175,257 @@ def filesystem_guard(workspace: Path) -> Callable[..., Any]:
         return {}
 
     return guard
+
+
+class RunRecorder(AbstractAsyncContextManager["RunRecorder"]):
+    """Keep local evidence and serialize coalesced artifact uploads for one run.
+
+    Synchronous callbacks belong to the event-loop thread. Explicit checkpoints also
+    capture proposal, search evidence, and any available workspace files. ``close``
+    only drains/stops workers; call ``finish`` to record a terminal status.
+    Local staging and artifact destinations must use separate directories so that
+    uploading an older snapshot cannot replace newer staging evidence.
+    """
+
+    transcript_interval = 15.0
+    write_timeout = 5.0
+    close_timeout = 5.0
+    retry_delay = 0.1
+
+    def __init__(
+        self,
+        artifact_store: RunArtifactStore,
+        run_date: date,
+        run_id: str,
+        local_run_dir: Path,
+        *,
+        console: TextIO | None = None,
+    ) -> None:
+        """Bind an existing run identity without starting background tasks."""
+        self.artifact_store = artifact_store
+        self.run_date = run_date
+        self.run_id = run_id
+        self.local_run_dir = local_run_dir.resolve()
+        if isinstance(artifact_store, LocalRunArtifactStore):
+            destination = artifact_store.data_dir / "runs" / run_date.isoformat() / run_id
+            if self.local_run_dir.is_relative_to(destination) or destination.is_relative_to(
+                self.local_run_dir
+            ):
+                raise ValueError("local run directory must be separate from artifact destination")
+        self.transcript = LogTranscript(self.local_run_dir / "transcript.jsonl", console=console)
+        self._uploaded: dict[str, bytes] = {}
+        self._requested = 0
+        self._completed = 0
+        self._full_requested = False
+        self._wake = asyncio.Event()
+        self._checkpoint_result: tuple[int, asyncio.Future[Exception | None]] | None = None
+        self._checkpoint_lock = asyncio.Lock()
+        self._last_error: Exception | None = None
+        self._worker_task: asyncio.Task[None] | None = None
+        self._timer_task: asyncio.Task[None] | None = None
+        self._started = False
+        self._closed = False
+
+    async def __aenter__(self) -> RunRecorder:
+        """Allow cleanup around preparation or generation exceptions."""
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        """Preserve an active primary exception if worker cleanup also fails."""
+        try:
+            await self.close()
+        except BaseException as cleanup_error:
+            if exc is None:
+                raise
+            exc.add_note(f"Run recorder cleanup failed: {type(cleanup_error).__name__}")
+
+    async def start(self, **metadata: Any) -> None:
+        """Persist initial diagnostics and the started event before checkpointing."""
+        if self._started or self._closed:
+            raise RuntimeError("run recorder can only be started once")
+        self._started = True
+        update_diagnostics(
+            self.local_run_dir,
+            **{**metadata, "status": "running", "date": self.run_date, "run_id": self.run_id},
+        )
+        self.transcript.append({**metadata, "event": "started", "date": self.run_date})
+        await self._persist(full=False)
+        self._worker_task = asyncio.create_task(self._worker(), name="run-artifact-worker")
+        self._timer_task = asyncio.create_task(self._periodic(), name="run-artifact-timer")
+
+    def append(self, event: dict[str, Any]) -> None:
+        """Append a redacted local event; the timer checkpoints transcript changes."""
+        self._require_running()
+        self.transcript.append(event)
+
+    def update_diagnostics(self, **updates: Any) -> None:
+        """Atomically merge local diagnostics and promptly request an upload."""
+        self._require_running()
+        update_diagnostics(self.local_run_dir, **updates)
+        self._request(full=False)
+
+    def _require_running(self) -> None:
+        """Reject callbacks outside an active recorder lifecycle."""
+        if not self._started or self._closed:
+            raise RuntimeError("run recorder is not running")
+
+    def _request(self, *, full: bool) -> int:
+        """Coalesce requests into one pending revision instead of an upload queue."""
+        self._requested += 1
+        self._full_requested |= full
+        self._wake.set()
+        return self._requested
+
+    async def checkpoint(self) -> None:
+        """Await a complete current snapshot and surface exhausted upload failures."""
+        self._require_running()
+        if self._worker_task is None:
+            raise RuntimeError("run recorder did not finish starting")
+        async with self._checkpoint_lock:
+            self._require_running()
+            requested = self._request(full=True)
+            result = asyncio.get_running_loop().create_future()
+            self._checkpoint_result = (requested, result)
+            error = await result
+            if error is not None:
+                raise error
+
+    async def _periodic(self) -> None:
+        """Request transcript snapshots at a fixed bounded interval."""
+        while True:
+            await asyncio.sleep(self.transcript_interval)
+            self._request(full=False)
+
+    async def _worker(self) -> None:
+        """Serialize snapshots and remember failures until the next upload attempt."""
+        while True:
+            await self._wake.wait()
+            self._wake.clear()
+            requested = self._requested
+            full = self._full_requested
+            self._full_requested = False
+            try:
+                await self._persist(full=full)
+            except Exception as error:
+                self._last_error = error
+            else:
+                self._last_error = None
+            self._completed = requested
+            if self._checkpoint_result is not None:
+                revision, result = self._checkpoint_result
+                if revision <= requested and not result.done():
+                    result.set_result(self._last_error)
+            if self._closed and self._completed >= self._requested:
+                return
+
+    def _snapshot(self, *, full: bool) -> dict[str, bytes]:
+        """Read immutable bytes, allowing absent artifacts but rejecting symlinks."""
+        paths = [self.local_run_dir / name for name in ("diagnostics.json", "transcript.jsonl")]
+        if full:
+            paths.extend(
+                self.local_run_dir / name for name in ("proposal.json", "search_results.json")
+            )
+            workspace = self.local_run_dir / "workspace"
+            if workspace.is_symlink():
+                raise ValueError("run artifacts must not contain symlinks")
+            if workspace.exists():
+                paths.extend(workspace.rglob("*"))
+        snapshot: dict[str, bytes] = {}
+        for path in paths:
+            if path.is_symlink() or not path.resolve().is_relative_to(self.local_run_dir):
+                raise ValueError("run artifacts must not contain symlinks or escape the run")
+            if path.is_file():
+                snapshot[path.relative_to(self.local_run_dir).as_posix()] = path.read_bytes()
+        return snapshot
+
+    async def _persist(self, *, full: bool) -> None:
+        """Snapshot first, then upload changed bytes with bounded retry attempts."""
+        snapshot = await asyncio.to_thread(self._snapshot, full=full)
+        failures: list[Exception] = []
+        for name, content in snapshot.items():
+            digest = hashlib.sha256(content).digest()
+            if self._uploaded.get(name) == digest:
+                continue
+            for attempt in range(3):
+                try:
+                    async with asyncio.timeout(self.write_timeout):
+                        await self.artifact_store.write(self.run_date, self.run_id, name, content)
+                except Exception as error:
+                    if attempt == 2:
+                        failures.append(error)
+                    else:
+                        await asyncio.sleep(self.retry_delay * 2**attempt)
+                else:
+                    self._uploaded[name] = digest
+                    break
+        if failures:
+            raise ExceptionGroup("run artifact writes exhausted retries", failures)
+
+    async def _stop_timer(self) -> None:
+        """Cancel and join the periodic requester before finalization."""
+        if self._timer_task is not None:
+            self._timer_task.cancel()
+            await asyncio.gather(self._timer_task, return_exceptions=True)
+            self._timer_task = None
+
+    async def finish(self, status: str, **metadata: Any) -> None:
+        """Record a terminal outcome, flush all available evidence, and stop workers."""
+        self._require_running()
+        try:
+            await self._stop_timer()
+            self.update_diagnostics(**{**metadata, "status": status})
+            self.append({**metadata, "event": "finished", "status": status})
+            await self.checkpoint()
+        except BaseException as primary_error:
+            try:
+                await self.close()
+            except BaseException as cleanup_error:
+                primary_error.add_note(
+                    f"Run recorder cleanup failed: {type(cleanup_error).__name__}"
+                )
+            raise
+        else:
+            await self.close()
+
+    async def close(self) -> None:
+        """Bound worker cleanup without creating an outcome or deleting local evidence."""
+        if self._closed:
+            return
+        self._closed = True
+        await self._stop_timer()
+        if self._worker_task is None:
+            return
+        worker_task = self._worker_task
+        # A sleeping worker can stop immediately; an active one gets time to drain.
+        if self._completed >= self._requested:
+            worker_task.cancel()
+        try:
+            done, _ = await asyncio.wait({worker_task}, timeout=self.close_timeout)
+            if not done:
+                worker_task.cancel()
+            await asyncio.gather(worker_task, return_exceptions=True)
+        except asyncio.CancelledError:
+            worker_task.cancel()
+            await asyncio.gather(worker_task, return_exceptions=True)
+            raise
+        finally:
+            self._worker_task = None
+            if self._checkpoint_result is not None:
+                _, result = self._checkpoint_result
+                if not result.done():
+                    result.set_result(
+                        RuntimeError("run recorder closed before checkpoint completed")
+                    )
+
+
+async def recover_run_artifacts(
+    artifact_store: RunArtifactStore,
+    run_date: date,
+    run_id: str,
+    local_run_dir: Path,
+) -> None:
+    """Upload existing evidence under its original prefix without starting a run."""
+    if not local_run_dir.is_dir():
+        raise FileNotFoundError(f"original run directory is missing: {local_run_dir}")
+    recorder = RunRecorder(artifact_store, run_date, run_id, local_run_dir)
+    await recorder._persist(full=True)
