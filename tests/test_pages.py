@@ -249,6 +249,27 @@ def test_day_page_real_playlist_renders_iframe(client: TestClient, site_data_dir
     assert "open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M" in today
 
 
+def test_day_page_prompt_collapsed_by_default(client: TestClient):
+    html = client.get(f"/index/{LATEST}").text
+    assert '<details class="day-prompt__more">' in html
+    assert '<details class="day-prompt__more" open' not in html
+    assert '<h3 class="day-prompt__label">Prompt</h3>' in html
+
+
+def test_day_page_prompt_splits_archived_json(client: TestClient, site_data_dir: Path):
+    day = day_json(site_data_dir, LATEST)
+    day["prompt"] = json.dumps(
+        {"system": "Be a DJ.\nPick songs.", "messages": [{"role": "user", "content": "Go"}]}
+    )
+    write_json(site_data_dir / "days" / f"{LATEST}.json", day)
+
+    html = client.get(f"/index/{LATEST}").text
+    assert '<h3 class="day-prompt__label">System</h3>' in html
+    assert '<pre class="day-prompt__text">Be a DJ.\nPick songs.</pre>' in html
+    assert '<h3 class="day-prompt__label">User</h3>' in html
+    assert "&#34;messages&#34;" not in html and "&quot;messages&quot;" not in html
+
+
 # ---- Today -------------------------------------------------------------------------
 
 
@@ -355,6 +376,12 @@ def test_bots_resident_without_days(client: TestClient, freeze_today):
     cards = resident_cards(client.get("/bots").text)
     assert "Not on air yet" in cards["resident-05"]
     assert 'class="led off"' in cards["resident-05"]
+
+
+def test_bots_cards_show_bio_without_label(client: TestClient):
+    cards = resident_cards(client.get("/bots").text)
+    assert cards
+    assert not any("Persona:" in card for card in cards.values())
 
 
 def test_bots_has_no_last_played(client: TestClient):

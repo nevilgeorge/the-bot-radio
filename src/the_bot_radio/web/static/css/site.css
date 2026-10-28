@@ -1343,9 +1343,14 @@ a.resident-card:hover .resident-card__link {
     font-size: 12px;
   }
 
+  /* Real bios stack one per row; the short "booting" placeholders still fit two across */
   .today-residents__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
     gap: 12px;
+  }
+
+  .today-residents__grid:has(.resident-card--booting) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .today-residents__grid .resident-card--booting {
@@ -1587,13 +1592,49 @@ a.resident-card:hover .resident-card__link {
   gap: 12px;
 }
 
+.day-prompt__more > summary {
+  list-style: none;
+}
+
+.day-prompt__more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.day-prompt__more[open] > summary {
+  margin-bottom: 4px;
+}
+
+.day-prompt__more[open] .day-prompt__show,
+.day-prompt__more:not([open]) .day-prompt__hide {
+  display: none;
+}
+
+.day-prompt__label {
+  margin: 12px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+/* Archived prompts run to ~18k chars; scroll inside the panel instead of the page. */
 .day-prompt__text {
+  max-height: 480px;
+  overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-2);
+}
+
+@media (max-width: 720px) {
+  .day-prompt__text {
+    max-height: 360px;
+  }
 }
 
 .day-prompt__meta {

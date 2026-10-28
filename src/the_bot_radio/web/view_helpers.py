@@ -1,6 +1,7 @@
 """Pure formatting helpers used by the templates (exposed as the Jinja global `h`)."""
 
 import hashlib
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -115,6 +116,30 @@ def total_duration(tracks: Iterable[Track]) -> str:
     minutes = sum(t.duration_ms for t in tracks) // 60_000
     hours, minutes = divmod(minutes, 60)
     return f"{hours} hr {minutes} min" if hours else f"{minutes} min"
+
+
+# --- prompt -----------------------------------------------------------------
+
+
+def prompt_sections(prompt: str) -> list[tuple[str, str]]:
+    """Split an archived prompt into (label, text) sections for the day page.
+
+    The generator archives `{"system": ..., "messages": [{"role", "content"}]}` as JSON;
+    anything else (plain-text prompts, invalid JSON) is shown as a single "Prompt" section.
+    """
+    try:
+        archived = json.loads(prompt)
+    except ValueError:
+        return [("Prompt", prompt)]
+    if not isinstance(archived, dict) or not isinstance(archived.get("messages"), list):
+        return [("Prompt", prompt)]
+    sections: list[tuple[str, str]] = []
+    if isinstance(archived.get("system"), str):
+        sections.append(("System", archived["system"]))
+    for message in archived["messages"]:
+        if isinstance(message, dict) and isinstance(message.get("content"), str):
+            sections.append((str(message.get("role", "message")).title(), message["content"]))
+    return sections or [("Prompt", prompt)]
 
 
 # --- mood meters ------------------------------------------------------------

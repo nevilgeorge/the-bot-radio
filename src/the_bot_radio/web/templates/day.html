@@ -109,7 +109,13 @@
 
       <section class="panel day-prompt" aria-labelledby="prompt-title">
         <h2 class="panel-title" id="prompt-title">The prompt</h2>
-        <pre class="day-prompt__text">{{ day.prompt }}</pre>
+        <details class="day-prompt__more">
+          <summary class="btn btn--secondary"><span class="day-prompt__show">Show the prompt</span><span class="day-prompt__hide">Hide the prompt</span></summary>
+          {%- for label, text in h.prompt_sections(day.prompt) %}
+          <h3 class="day-prompt__label">{{ label }}</h3>
+          <pre class="day-prompt__text">{{ text }}</pre>
+          {%- endfor %}
+        </details>
         <p class="day-prompt__meta">model: {{ day.model }} · run {{ h.format_run_time(day.generated_at) }}</p>
       </section>
     </aside>

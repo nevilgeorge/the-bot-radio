@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -295,3 +296,15 @@ def test_input_display_quiet(status):
 
 def test_input_display_ok():
     assert h.input_display(reading("tide", "3.1 ft", 0.4)) == ("3.1 ft", "→ tide effect")
+
+
+def test_prompt_sections_archived_json():
+    prompt = json.dumps(
+        {"system": "Be a DJ.", "messages": [{"role": "user", "content": '{"inputs": 1}'}]}
+    )
+    assert h.prompt_sections(prompt) == [("System", "Be a DJ."), ("User", '{"inputs": 1}')]
+
+
+@pytest.mark.parametrize("prompt", ["You are the morning DJ.", "{not json", "[1, 2]", "{}"])
+def test_prompt_sections_falls_back_to_plain_text(prompt: str):
+    assert h.prompt_sections(prompt) == [("Prompt", prompt)]

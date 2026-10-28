@@ -11,7 +11,7 @@
 <a class="resident-card" href="/index?dj={{ persona.id|urlencode }}">
   {{ resident_status(last_date, today) }}
   <span class="resident-card__name">{{ persona.name }}</span>
-  <span class="resident-card__persona">Persona: {{ persona.bio or "[TBD]" }}</span>
+  <span class="resident-card__persona">{{ persona.bio or "[TBD]" }}</span>
   <span class="resident-card__stats">
     <span>Days on air: {{ days_on_air }}</span>
   </span>
