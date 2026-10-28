@@ -113,6 +113,16 @@ def test_playlist_file_deduplicates_and_validates_every_entry(tmp_path: Path) ->
         collector.select_playlist_ids(None, True, tmp_path)
 
 
+def test_cli_keeps_catalog_in_package_when_playlist_directory_changes(tmp_path: Path) -> None:
+    """Playlist configuration and the shipped catalog have independent locations."""
+    arguments = collector.parse_args(["--all-playlists", "--data-dir", str(tmp_path)])
+    assert arguments.data_dir == tmp_path
+    assert arguments.catalog_dir == collector.RESOURCE_DIR
+    catalog_directory = tmp_path / "catalog"
+    arguments = collector.parse_args([PLAYLIST_ID, "--catalog-dir", str(catalog_directory)])
+    assert arguments.catalog_dir == catalog_directory
+
+
 def test_catalog_round_trip_and_invalid_records(tmp_path: Path) -> None:
     catalog_path = tmp_path / "shared_catalog.jsonl"
     original_track = catalog_track()

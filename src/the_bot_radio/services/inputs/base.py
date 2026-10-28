@@ -9,6 +9,7 @@ from typing import Any, ClassVar, Literal, Protocol
 import httpx
 from pydantic import BaseModel, Field
 
+from the_bot_radio.resources import RESOURCE_DIR
 from the_bot_radio.web import config as web_config
 
 TZ = web_config.TZ
@@ -59,6 +60,7 @@ class RunContext:
     http: httpx.AsyncClient
     settings: Settings = field(default_factory=Settings)
     data_dir: Path = web_config.DATA_DIR
+    resources_dir: Path = RESOURCE_DIR
 
     def reading(self, service: "InputService", value: str, **reading_fields: Any) -> Reading:
         """Build a `Reading` stamped with the service's key/label and this run's time."""

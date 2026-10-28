@@ -32,6 +32,7 @@ from the_bot_radio.catalog import (
     LookupState,
     load_catalog,
 )
+from the_bot_radio.resources import RESOURCE_DIR
 from the_bot_radio.services.spotify_service import SpotifyError, SpotifyService
 from the_bot_radio.web import config
 
@@ -263,7 +264,7 @@ def record_result(
 
 async def collect_catalog(
     playlist_ids: list[str],
-    data_dir: Path,
+    catalog_dir: Path,
     spotify_service: SpotifyService,
     reccobeats_client: ReccoBeatsClient,
     *,
@@ -280,7 +281,7 @@ async def collect_catalog(
     now = now.astimezone(config.TZ)
     summary = CollectionSummary()
     counts: Counter[str] = Counter()
-    catalog_path = data_dir / CATALOG_FILENAME
+    catalog_path = catalog_dir / CATALOG_FILENAME
     with catalog_lock(catalog_path):
         records = load_catalog(catalog_path)
         selected_ids: dict[str, None] = {}
@@ -360,7 +361,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--all-playlists", action="store_true", help=f"read {PLAYLISTS_FILENAME}")
     parser.add_argument("--limit", type=int, help="maximum unique tracks to collect")
     parser.add_argument("--refresh", action="store_true", help="refresh cached source results")
-    parser.add_argument("--data-dir", type=Path, default=config.DATA_DIR)
+    parser.add_argument(
+        "--data-dir", type=Path, default=config.DATA_DIR, help="directory containing playlist URLs"
+    )
+    parser.add_argument(
+        "--catalog-dir", type=Path, default=RESOURCE_DIR, help="directory for the output catalog"
+    )
     arguments = parser.parse_args(argv)
     if bool(arguments.playlist) == arguments.all_playlists:
         parser.error("provide one playlist or --all-playlists")
@@ -381,7 +387,7 @@ async def run_collection(arguments: argparse.Namespace) -> CollectionSummary:
     ) as http_client:
         return await collect_catalog(
             playlist_ids,
-            arguments.data_dir,
+            arguments.catalog_dir,
             SpotifyService(http_client),
             ReccoBeatsClient(http_client),
             limit=arguments.limit,

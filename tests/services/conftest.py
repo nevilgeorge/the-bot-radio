@@ -28,6 +28,7 @@ async def make_ctx(tmp_path):
             now: datetime | None = None,
             settings: Settings | None = None,
             data_dir: Path | None = None,
+            resources_dir: Path | None = None,
         ) -> RunContext:
             return RunContext(
                 run_date=run_date,
@@ -35,6 +36,7 @@ async def make_ctx(tmp_path):
                 http=client,
                 settings=settings or Settings(),
                 data_dir=data_dir or tmp_path,
+                resources_dir=resources_dir or tmp_path,
             )
 
         yield _make

@@ -48,7 +48,7 @@ For a new, empty server, deploy with your source dataset:
   --data-dir ./data
 ```
 
-Only `personas.json`, `inputs.json`, and calendar-valid `days/YYYY-MM-DD.json` files are
+Only `inputs.json` and calendar-valid `days/YYYY-MM-DD.json` files are
 seeded. JSON must parse; symlinks are rejected. Existing data is never overwritten.
 Relative paths are relative to your current directory.
 
@@ -105,7 +105,7 @@ sudo tail -n 100 /var/log/cloud-init-output.log
 |---|---|
 | `/opt/the-bot-radio/releases/<id>` | Application releases and their virtual environments |
 | `/opt/the-bot-radio/current` | Active release symlink |
-| `/var/lib/the-bot-radio/data` | Persistent personas, input descriptions, and daily records |
+| `/var/lib/the-bot-radio/data` | Persistent input descriptions and daily records |
 
 The app runs as `bot-radio` on `127.0.0.1:8000` and trusts forwarded headers only from
 localhost. Caddy serves HTTPS and proxies all routes, including static assets. Only the
@@ -145,8 +145,8 @@ Do not grant artifact access, writes, or deletion. Generation and qualification 
 separate credentials with daily/artifact read/write permissions and necessary listing;
 qualification writes only beneath `<prefix>/qualification/<uuid>/`.
 
-Keep `personas.json` and `inputs.json` under `BOT_RADIO_DATA_DIR` even in S3 mode;
-the catalog also stays local for generation. The initial remote load must succeed before
+`personas.json` and `shared_catalog.jsonl` ship in the application package under
+`the_bot_radio/resources/`. Keep `inputs.json` under `BOT_RADIO_DATA_DIR` even in S3 mode. The initial remote load must succeed before
 startup completes. Empty or entirely hidden/invalid data is allowed. Later refreshes wait
 300 seconds after the preceding attempt, retain the last complete snapshot on infrastructure
 failure, and log failures/recovery. `/healthz` reports the latest cached visible day and

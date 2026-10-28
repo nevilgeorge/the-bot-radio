@@ -40,6 +40,21 @@ async def test_happy_path(make_ctx, tmp_path):
     assert r.data["seed"] == DAY.toordinal()
 
 
+async def test_personas_are_independent_of_daily_data_directory(make_ctx, tmp_path):
+    """A daily storage directory does not need to contain bundled reference inputs."""
+    resources_dir = tmp_path / "resources"
+    resources_dir.mkdir()
+    ids = write_personas(resources_dir, 4)
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    write_day(data_dir, DAY - timedelta(days=1), json.dumps({"dj": ids[0]}))
+    reading = await DjRollService().fetch(
+        make_ctx(run_date=DAY, data_dir=data_dir, resources_dir=resources_dir)
+    )
+    assert reading.data["excluded"] == [ids[0]]
+    assert reading.data["candidates"] == ids[1:]
+
+
 async def test_same_date_same_pick(make_ctx, tmp_path):
     write_personas(tmp_path, 4)
     picks = {(await DjRollService().fetch(make_ctx(run_date=DAY))).value for _ in range(10)}
@@ -57,7 +72,8 @@ async def test_same_pick_across_processes(make_ctx, tmp_path):
         "    d = datetime.date.fromisoformat(sys.argv[2])\n"
         "    async with make_http_client() as http:\n"
         "        ctx = RunContext(run_date=d, now=datetime.datetime.now(TZ), http=http,\n"
-        "                         data_dir=pathlib.Path(sys.argv[1]))\n"
+        "                         data_dir=pathlib.Path(sys.argv[1]),\n"
+        "                         resources_dir=pathlib.Path(sys.argv[1]))\n"
         "        print((await DjRollService().fetch(ctx)).data['persona_id'])\n"
         "asyncio.run(main())\n"
     )

@@ -77,7 +77,7 @@ def data_dir(tmp_path: Path) -> Path:
 
 
 def test_construction_is_lazy(tmp_path: Path):
-    store = Store(tmp_path / "does-not-exist")
+    store = Store(tmp_path / "does-not-exist", resources_dir=tmp_path / "missing-resources")
     assert store.latest_day() is None
     assert store.list_days() == []
     assert store.personas() == []
@@ -85,7 +85,7 @@ def test_construction_is_lazy(tmp_path: Path):
 
 
 def test_loads_and_sorts_newest_first(data_dir: Path):
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     days = store.list_days()
     assert [d.date.isoformat() for d in days] == [
         "2026-10-02",
@@ -99,7 +99,7 @@ def test_loads_and_sorts_newest_first(data_dir: Path):
 
 
 def test_list_days_filters(data_dir: Path):
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     assert [d.date.day for d in store.list_days(dj="resident-01")] == [1, 29]
     assert [d.date.day for d in store.list_days(month="2026-09")] == [30, 29]
     assert [d.date.day for d in store.list_days(dj="resident-01", month="2026-10")] == [1]
@@ -107,14 +107,14 @@ def test_list_days_filters(data_dir: Path):
 
 
 def test_months(data_dir: Path):
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     assert store.months() == ["2026-10", "2026-09"]
     assert store.months(dj="resident-02") == ["2026-09"]
     assert store.months(dj="resident-04") == []
 
 
 def test_prev_next(data_dir: Path):
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     prev, nxt = store.prev_next(date(2026, 10, 1))
     assert prev.date == date(2026, 9, 30)
     assert nxt.date == date(2026, 10, 2)
@@ -129,7 +129,7 @@ def test_prev_next(data_dir: Path):
 
 
 def test_personas_and_inputs(data_dir: Path):
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     assert [p.id for p in store.personas()] == [f"resident-0{i}" for i in range(1, 5)]
     assert store.persona("resident-03").name == "[Resident 03]"
     assert store.persona("nobody") is None
@@ -137,7 +137,7 @@ def test_personas_and_inputs(data_dir: Path):
 
 
 def test_resident_stats(data_dir: Path):
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     assert store.resident_stats("resident-01") == (2, date(2026, 10, 1))
     assert store.resident_stats("resident-03") == (1, date(2026, 10, 2))
     assert store.resident_stats("resident-04") == (0, None)
@@ -149,7 +149,7 @@ def test_invalid_files_are_skipped(data_dir: Path, caplog: pytest.LogCaptureFixt
     del bad["mood"]
     (data_dir / "days" / "2026-10-04.json").write_text(json.dumps(bad), encoding="utf-8")
 
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     with caplog.at_level(logging.WARNING, logger="the_bot_radio.web.store"):
         days = store.list_days()
 
@@ -162,14 +162,14 @@ def test_invalid_files_are_skipped(data_dir: Path, caplog: pytest.LogCaptureFixt
 
 def test_invalid_personas_file_does_not_raise(data_dir: Path, caplog: pytest.LogCaptureFixture):
     (data_dir / "personas.json").write_text("[", encoding="utf-8")
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     with caplog.at_level(logging.WARNING, logger="the_bot_radio.web.store"):
         assert store.personas() == []
     assert any("personas.json" in r.getMessage() for r in caplog.records)
 
 
 def test_hot_reload(data_dir: Path):
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     assert store.latest_day().date == date(2026, 10, 2)
 
     path = write_day(data_dir, "2026-10-03", dj="resident-04", title="New drop")
@@ -207,7 +207,7 @@ def test_pending_days_are_hidden_from_all_store_views(data_dir: Path) -> None:
     pending_day = make_day("2026-10-03", dj="resident-04")
     pending_day.update(publication_status="pending", spotify_playlist_id=None)
     (data_dir / "days" / "2026-10-03.json").write_text(json.dumps(pending_day))
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     assert store.latest_day().date == date(2026, 10, 2)
     assert store.get_day(date(2026, 10, 3)) is None
     assert len(store.list_days()) == 4
@@ -221,7 +221,7 @@ def test_pending_day_becomes_visible_after_publication_without_restart(data_dir:
     pending_day.update(publication_status="pending", spotify_playlist_id=None)
     path = data_dir / "days" / "2026-11-01.json"
     path.write_text(json.dumps(pending_day))
-    store = Store(data_dir)
+    store = Store(data_dir, resources_dir=data_dir)
     assert "2026-11" not in store.months()
     assert store.get_day(date(2026, 11, 1)) is None
 
@@ -241,7 +241,7 @@ def test_explicitly_published_day_without_playlist_id_is_hidden(data_dir: Path) 
     invalid_day = make_day("2026-10-03")
     invalid_day.update(publication_status="published", spotify_playlist_id=None)
     (data_dir / "days" / "2026-10-03.json").write_text(json.dumps(invalid_day))
-    assert Store(data_dir).get_day(date(2026, 10, 3)) is None
+    assert Store(data_dir, resources_dir=data_dir).get_day(date(2026, 10, 3)) is None
 
 
 def test_snapshot_source_preserves_all_views_and_local_static_reload(data_dir: Path) -> None:
@@ -260,7 +260,7 @@ def test_snapshot_source_preserves_all_views_and_local_static_reload(data_dir: P
     }
     source = Mock()
     source.days.side_effect = lambda: records.copy()
-    store = Store(data_dir, daily_source=source)
+    store = Store(data_dir, daily_source=source, resources_dir=data_dir)
     store._days_signature = Mock(side_effect=AssertionError("local daily files inspected"))
     assert store.latest_day().date == date(2026, 10, 3)
     assert store.get_day(date(2026, 10, 2)) is None

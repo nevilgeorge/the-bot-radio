@@ -53,6 +53,9 @@ def deploy_environment(tmp_path: Path) -> dict[str, str]:
     source_directory = repository / "src" / "the_bot_radio"
     source_directory.mkdir(parents=True)
     (source_directory / "__init__.py").write_text('"""Test application."""\n')
+    (source_directory / "resources").mkdir()
+    (source_directory / "resources" / "personas.json").write_text("[]")
+    (source_directory / "resources" / "shared_catalog.jsonl").write_text("{}\n")
     (source_directory / "__pycache__").mkdir()
     (source_directory / "__pycache__" / "private.pyc").write_text("private")
     for directory in (".git", ".venv", "data", "credentials"):
@@ -60,7 +63,7 @@ def deploy_environment(tmp_path: Path) -> dict[str, str]:
         (repository / directory / "private").write_text("secret")
     (repository / ".env").write_text("SECRET=hidden\n")
     (repository / "data" / "days").mkdir()
-    for filename in ("personas.json", "inputs.json"):
+    for filename in ("inputs.json",):
         (repository / "data" / filename).write_text("[]")
     (repository / "data" / "days" / "2026-10-27.json").write_text("{}")
     (repository / "data" / "days" / "private.json").write_text("secret")
@@ -117,6 +120,8 @@ def test_normal_deployment_excludes_credentials_and_data(
     members = archive_members(deploy_environment, "application.tar.gz")
     assert {"pyproject.toml", "uv.lock", "README.md", ".python-version"} <= members
     assert "src/the_bot_radio/__init__.py" in members
+    assert "src/the_bot_radio/resources/personas.json" in members
+    assert "src/the_bot_radio/resources/shared_catalog.jsonl" in members
     assert not any(
         name.startswith(("data/", ".git/", ".venv/", "credentials/"))
         or "__pycache__" in name
@@ -135,7 +140,6 @@ def test_seed_transfers_only_allowed_data(deploy_environment: dict[str, str]) ->
     result = run_deploy(deploy_environment, "--seed-data")
     assert result.returncode == 0, result.stderr
     assert archive_members(deploy_environment, "seed.tar.gz") == {
-        "personas.json",
         "inputs.json",
         "days/2026-10-27.json",
     }
@@ -213,7 +217,7 @@ def remote_environment(tmp_path: Path) -> dict[str, str]:
     staging_directory.mkdir()
     for archive_name, files in {
         "application.tar.gz": {"pyproject.toml": "test"},
-        "seed.tar.gz": {"personas.json": "[]", "inputs.json": "[]"},
+        "seed.tar.gz": {"inputs.json": "[]"},
     }.items():
         source_directory = tmp_path / archive_name.removesuffix(".tar.gz")
         source_directory.mkdir()
@@ -286,8 +290,8 @@ def test_remote_seed_is_activated_atomically(remote_environment: dict[str, str])
     result = run_remote(remote_environment, seed=True)
     assert result.returncode == 0, result.stderr
     state_root = Path(remote_environment["DEPLOY_TEST_STATE_ROOT"])
-    assert (state_root / "data" / "personas.json").read_text() == "[]"
     assert (state_root / "data" / "inputs.json").read_text() == "[]"
+    assert not (state_root / "data" / "personas.json").exists()
     assert not list(state_root.glob("seed.*"))
     moves = [command for command in read_commands(remote_environment) if command[0] == "mv"]
     assert any(command[1] == "-T" and command[-1] == str(state_root / "data") for command in moves)
@@ -356,13 +360,11 @@ def test_seed_uses_explicit_data_directory(
     """An operator can seed a separate backup without including repository data."""
     backup_directory = tmp_path / "backup data"
     (backup_directory / "days").mkdir(parents=True)
-    (backup_directory / "personas.json").write_text("[]")
     (backup_directory / "inputs.json").write_text("[]")
     (backup_directory / "days" / "2026-10-26.json").write_text("{}")
     result = run_deploy(deploy_environment, "--seed-data", "--data-dir", str(backup_directory))
     assert result.returncode == 0, result.stderr
     assert archive_members(deploy_environment, "seed.tar.gz") == {
-        "personas.json",
         "inputs.json",
         "days/2026-10-26.json",
     }

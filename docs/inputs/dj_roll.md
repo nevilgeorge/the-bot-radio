@@ -3,7 +3,8 @@
 Picks the day's resident DJ. Uses local history by default; runs once per daily run.
 
 ## Sources
-- `data/personas.json` — list of personas, validated as `the_bot_radio.web.models.Persona`.
+- `src/the_bot_radio/resources/personas.json` — packaged list of personas, validated as
+  `the_bot_radio.web.models.Persona`; tests may inject `RunContext.resources_dir`.
 - `data/days/<run_date - 1>.json` — yesterday's record; only its `"dj"` field (a persona id) is read.
 - Standalone callers may instead pass `DjRollService(daily_reader=...)` with an async
   `read(date) -> bytes | None` reader, such as `S3DailyRecordStore`. The caller owns its

@@ -1,4 +1,4 @@
-"""The DJ roll: picks today's resident DJ from local data/personas.json.
+"""The DJ roll: picks today's resident DJ from packaged resources/personas.json.
 
 The pick is a seeded random choice (seed = ``run_date.toordinal()``), so re-running a
 day always rolls the same DJ, in any process. Yesterday's DJ (read from
@@ -61,7 +61,9 @@ class DjRollService:
 
     async def fetch(self, ctx: RunContext) -> Reading:
         """Pick a persona deterministically for `ctx.run_date`."""
-        personas = _persona_list_adapter.validate_json((ctx.data_dir / "personas.json").read_text())
+        personas = _persona_list_adapter.validate_json(
+            (ctx.resources_dir / "personas.json").read_text(encoding="utf-8")
+        )
         yesterday = ctx.run_date - timedelta(days=1)
         if self.daily_reader is None:
             yesterdays_dj_id = _yesterdays_dj(

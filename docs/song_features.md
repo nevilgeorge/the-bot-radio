@@ -35,17 +35,19 @@ uv run python scripts/collect_song_features.py --all-playlists
 
 The positional playlist and `--all-playlists` are mutually exclusive. `--limit N` selects the
 first N unique tracks across playlists in input order. `--data-dir PATH` overrides
-`BOT_RADIO_DATA_DIR` for both the playlist list and the output catalog. `--refresh` repeats
+`BOT_RADIO_DATA_DIR` for the playlist list. `--catalog-dir PATH` overrides the output catalog
+directory, which defaults to the installed package's `resources/` directory. Run the collector
+from the source checkout to update the Git-tracked catalog. `--refresh` repeats
 completed lookups. All playlist inputs are validated before network requests begin.
 
 ## Data and caching
 
-The output is `data/shared_catalog.jsonl`: one JSON object per unique Spotify track ID. Each
+The output is `src/the_bot_radio/resources/shared_catalog.jsonl`: one JSON object per unique Spotify track ID. Each
 record contains Spotify metadata, source playlist provenance, a nullable `descriptors.audio`
 block, and ReccoBeats lookup state. The audio block carries its source and fetch date;
 attempt timestamps are timezone-aware America/New_York values.
 
-Generate the JSONL offline, then include it in the deployment's configured data directory.
+Generate the JSONL offline, then commit it so it ships with the application package.
 The server only reads this internal file; it does not run the collector or make feature
 requests. No HTTP route or static-file mount exposes the catalog. Regenerate
 it offline and deploy the updated file when the source playlists change.

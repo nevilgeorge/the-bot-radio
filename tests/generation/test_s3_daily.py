@@ -11,11 +11,11 @@ import pytest
 from botocore.exceptions import ClientError
 from test_daily import NOW, RUN_DATE, staged_diagnostics
 from test_daily import generation_services as generation_services
-from the_bot_radio.generation.s3_storage import S3DailyRecordStore, S3RunArtifactStore
 
 from the_bot_radio.generation.daily import generate_day
 from the_bot_radio.generation.models import DailyRecord
 from the_bot_radio.generation.runtime import RunRecorder, recover_run_artifacts
+from the_bot_radio.generation.s3_storage import S3DailyRecordStore, S3RunArtifactStore
 
 pytestmark = pytest.mark.anyio
 BUCKET = "offline-generation-data"

@@ -34,6 +34,7 @@ from the_bot_radio.generation.storage import (
     RunArtifactStore,
 )
 from the_bot_radio.generation.validation import PlaylistValidator, assemble_daily_record
+from the_bot_radio.resources import RESOURCE_DIR
 from the_bot_radio.services.claude_service import MODEL, ClaudeService
 from the_bot_radio.services.inputs.base import TZ, make_http_client
 from the_bot_radio.services.spotify_service import SpotifyService
@@ -64,6 +65,7 @@ async def generate_day(
     daily_store: DailyRecordStore | None = None,
     artifact_store: RunArtifactStore | None = None,
     staging_root: Path | None = None,
+    resources_dir: Path | None = None,
 ) -> str:
     """Audit one invocation, checkpoint evidence, and create a canonical day once."""
     now = now or datetime.now(TZ)
@@ -130,6 +132,7 @@ async def generate_day(
                     now,
                     http_client,
                     claude_service,
+                    resources_dir=resources_dir if resources_dir is not None else RESOURCE_DIR,
                     daily_store=daily_store,
                     diagnostics_sink=recorder.update_diagnostics,
                 )

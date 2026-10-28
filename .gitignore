@@ -16,7 +16,6 @@ wheels/
 shared_catalog.jsonl.lock
 
 # Generated Spotify exports and daily records
-/data/shared_catalog.jsonl
 /data/shared_catalog_playlists.json
 /data/spotify_playlists.json
 /data/days/

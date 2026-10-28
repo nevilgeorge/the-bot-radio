@@ -6,7 +6,18 @@ import tarfile
 from datetime import date
 from pathlib import Path
 
-SOURCE_SUFFIXES = {".py", ".html", ".css", ".js", ".svg", ".png", ".jpg", ".webp", ".json"}
+SOURCE_SUFFIXES = {
+    ".py",
+    ".html",
+    ".css",
+    ".js",
+    ".svg",
+    ".png",
+    ".jpg",
+    ".webp",
+    ".json",
+    ".jsonl",
+}
 
 
 def add_file(archive: tarfile.TarFile, source: Path, name: str) -> None:
@@ -35,7 +46,7 @@ def package_application(repository_root: Path, output_directory: Path) -> None:
 def package_seed(data_directory: Path, output_directory: Path) -> None:
     """Stage only descriptions and valid date-named daily JSON, with no private run files."""
     with tarfile.open(output_directory / "seed.tar.gz", "w:gz") as archive:
-        seed_paths = [data_directory / "personas.json", data_directory / "inputs.json"]
+        seed_paths = [data_directory / "inputs.json"]
         days_directory = data_directory / "days"
         if data_directory.is_symlink() or days_directory.is_symlink():
             raise ValueError("Seed directories must not be symlinks")

@@ -24,6 +24,7 @@ from the_bot_radio.generation.models import (
 )
 from the_bot_radio.generation.runtime import update_diagnostics
 from the_bot_radio.generation.storage import DailyRecordStore, LocalDailyRecordStore
+from the_bot_radio.resources import RESOURCE_DIR
 from the_bot_radio.services.inputs import SERVICES, runner
 from the_bot_radio.services.inputs.base import TZ, Reading, RunContext
 from the_bot_radio.services.inputs.dj_roll import DjRollService
@@ -125,7 +126,7 @@ async def _load_history(
 def _select_dj(run_context: RunContext, history: list[DailyRecord]) -> tuple[Persona, Reading]:
     """Load residents, roll against published history, and validate the selected persona."""
     personas = TypeAdapter(list[Persona]).validate_json(
-        (run_context.data_dir / "personas.json").read_text(encoding="utf-8")
+        (run_context.resources_dir / "personas.json").read_text(encoding="utf-8")
     )
     if len({persona.id for persona in personas}) != len(personas):
         raise ValueError("persona IDs must be unique")
@@ -148,6 +149,7 @@ async def prepare_run(
     http_client: httpx.AsyncClient,
     claude_service: ClaudeService,
     *,
+    resources_dir: Path = RESOURCE_DIR,
     daily_store: DailyRecordStore | None = None,
     diagnostics_sink: DiagnosticsSink | None = None,
 ) -> PreparedRun:
@@ -155,7 +157,7 @@ async def prepare_run(
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("run timestamp must be timezone-aware")
     now = now.astimezone(TZ)
-    catalog_source = data_dir / "shared_catalog.jsonl"
+    catalog_source = resources_dir / "shared_catalog.jsonl"
     if not catalog_source.is_file():
         raise ValueError("shared catalog is missing or empty")
     workspace = artifact_dir / "workspace"
@@ -186,7 +188,9 @@ async def prepare_run(
     if len(eligible_artists) < 5:
         raise ValueError("catalog needs five eligible tracks with distinct primary artists")
 
-    run_context = RunContext(run_date=run_date, now=now, http=http_client, data_dir=data_dir)
+    run_context = RunContext(
+        run_date=run_date, now=now, http=http_client, data_dir=data_dir, resources_dir=resources_dir
+    )
     persona, dj_reading = _select_dj(run_context, history)
 
     other_readings = await runner.read_all(

@@ -47,7 +47,8 @@ server. See [deployment, logs, and troubleshooting](deploy/README.md) or
 
 ## Generate a daily playlist
 
-Populate `data/shared_catalog.jsonl` with the offline collector and configure
+The shared catalog ships in `src/the_bot_radio/resources/shared_catalog.jsonl`; update it with
+the offline collector as needed. Configure
 `ANTHROPIC_API_KEY`, `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, and
 `SPOTIFY_REFRESH_TOKEN` in `.env` (see [Spotify setup](docs/spotify.md)). Then run:
 
@@ -93,8 +94,8 @@ including proposals rejected by playlist rules; `transcript.jsonl`
 records the conversation, and `search_results.json` preserves Spotify verification evidence.
 `diagnostics.json` combines run status, raw input readings, mood usage, and failure details.
 The agent can read only `workspace/`, containing `context.json`, `catalog.jsonl`, `history/`,
-and `schemas/`. The selected persona is supplied in the prompt; `data/personas.json` stays
-at the source. The full layout and file lifecycle are documented in the module docstring of
+and `schemas/`. The selected persona is supplied in the prompt; the packaged `personas.json`
+stays at the source. The full layout and file lifecycle are documented in the module docstring of
 `src/the_bot_radio/generation/daily.py`. Earlier run layouts remain untouched.
 The schemas in `schemas/` are generated from the Pydantic contracts; only the proposal schema
 is supplied in each agent workspace. `generation/agent.py` owns `PlaylistAgent` and the playlist system
@@ -232,12 +233,14 @@ terraform -chdir=terraform test
 To import shared catalog playlists and collect audio features, see
 [song feature collection](docs/song_features.md).
 
-The site defaults to JSON from `data/` (override with `BOT_RADIO_DATA_DIR`); in S3 mode
+Version-controlled reference files ship in `src/the_bot_radio/resources/`. Daily records and
+input descriptions default to `data/` (override with `BOT_RADIO_DATA_DIR`); in S3 mode
 only daily records move to the memory cache:
 
 - `data/days/YYYY-MM-DD.json`: one record per day, written by the pipeline. The newest file is
   the Today page. Files are picked up without a restart; invalid files are logged and skipped.
-- `data/personas.json`: the bot DJs.
+- `src/the_bot_radio/resources/personas.json`: the bot DJs.
+- `src/the_bot_radio/resources/shared_catalog.jsonl`: the shared track catalog.
 - `data/inputs.json`: descriptions of each input for the Inputs page.
 
 The schema is in `src/the_bot_radio/web/models.py`.

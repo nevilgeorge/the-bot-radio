@@ -36,6 +36,7 @@ def generation_services(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Simp
     """Provide deterministic catalog/persona evidence and real tool adapters with fake APIs."""
     data_dir = tmp_path / "data"
     data_dir.mkdir()
+    monkeypatch.setattr(daily, "RESOURCE_DIR", data_dir)
     tracks = [
         {
             "position": index,
@@ -426,13 +427,11 @@ def test_cli_invalid_limits_fail_before_generation(monkeypatch, capsys, argument
 async def test_live_generation_writes_only_a_pending_temporary_day(tmp_path):
     """Opt in with RUN_LIVE=1; calls Claude/readings/search but never creates a playlist."""
     repo_data = Path(__file__).resolve().parents[2] / "data"
-    catalog_path = repo_data / "shared_catalog.jsonl"
+    catalog_path = daily.RESOURCE_DIR / "shared_catalog.jsonl"
     if not catalog_path.exists():
         pytest.skip("populate the shared catalog before live qualification")
     data_dir = tmp_path / "live-data"
     data_dir.mkdir()
-    shutil.copyfile(catalog_path, data_dir / "shared_catalog.jsonl")
-    shutil.copyfile(repo_data / "personas.json", data_dir / "personas.json")
     now = datetime.now(TZ)
     history_dir = data_dir / "days"
     history_dir.mkdir()
@@ -462,7 +461,7 @@ async def test_live_generation_writes_only_a_pending_temporary_day(tmp_path):
     assert Path(output_path).is_relative_to(tmp_path)
     assert list((data_dir / "runs").glob("*/*/diagnostics.json"))
 
-    catalog = load_catalog(data_dir / "shared_catalog.jsonl")
+    catalog = load_catalog(catalog_path)
     assert len({normalize_artist(track.artists[0]) for track in record.tracks}) == 10
     for track in record.tracks:
         assert track.wildcard == (track.spotify_id not in catalog)

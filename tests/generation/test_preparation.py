@@ -137,7 +137,7 @@ async def prepare(
     )
     async with httpx.AsyncClient() as client:
         result = await preparation.prepare_run(
-            data_dir, artifact_dir, run_date, now, client, mood_service
+            data_dir, artifact_dir, run_date, now, client, mood_service, resources_dir=data_dir
         )
     return result, mood_service
 
@@ -410,6 +410,7 @@ async def test_injected_history_bytes_and_diagnostics_callback(tmp_path, fake_re
             NOW,
             client,
             mood_service,
+            resources_dir=data_dir,
             daily_store=daily_store,
             diagnostics_sink=diagnostics_sink,
         )
@@ -527,6 +528,7 @@ async def test_preparation_diagnostics_work_with_run_recorder(tmp_path, fake_rea
                 NOW,
                 client,
                 mood_service,
+                resources_dir=data_dir,
                 daily_store=MemoryDailyStore({}),
                 diagnostics_sink=recorder.update_diagnostics,
             )

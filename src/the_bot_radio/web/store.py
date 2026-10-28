@@ -14,6 +14,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
+from the_bot_radio.resources import RESOURCE_DIR
+
 from .daily_cache import DailySnapshotSource
 from .models import Day, InputDescription, Persona
 
@@ -34,10 +36,17 @@ def _mtime(path: Path) -> int | None:
 
 
 class Store:
-    def __init__(self, data_dir: Path, daily_source: DailySnapshotSource | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        daily_source: DailySnapshotSource | None = None,
+        *,
+        resources_dir: Path = RESOURCE_DIR,
+    ) -> None:
         """Use local hot reload unless a synchronous snapshot source is supplied."""
         self._daily_source = daily_source
         self.data_dir = Path(data_dir)
+        self.resources_dir = Path(resources_dir)
         self._lock = threading.Lock()
         self._days_sig: Signature | None = None
         self._personas_sig: object = _UNLOADED
@@ -76,9 +85,11 @@ class Store:
                     self._load_days()
                     self._days_sig = sig
 
-            psig = _mtime(self.data_dir / "personas.json")
+            psig = _mtime(self.resources_dir / "personas.json")
             if psig != self._personas_sig:
-                self._personas = self._load_list(self.data_dir / "personas.json", _personas_adapter)
+                self._personas = self._load_list(
+                    self.resources_dir / "personas.json", _personas_adapter
+                )
                 self._personas_sig = psig
 
             isig = _mtime(self.data_dir / "inputs.json")
