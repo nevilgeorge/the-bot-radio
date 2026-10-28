@@ -10,8 +10,8 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import APIRouter, Depends, FastAPI, Request
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -34,7 +34,6 @@ log = logging.getLogger(__name__)
 
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 MONTH_RE = re.compile(r"^\d{4}-\d{2}$")
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 router = APIRouter()
 
@@ -87,7 +86,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 
 
 @router.get("/", response_class=HTMLResponse)
-def today_page(request: Request, store: StoreDep, subscribed: str | None = None):
+def today_page(request: Request, store: StoreDep):
     day = store.latest_day()
     recent = [d for d in store.list_days() if day is None or d.date != day.date][:4]
     personas = store.personas()
@@ -101,7 +100,6 @@ def today_page(request: Request, store: StoreDep, subscribed: str | None = None)
         recent=recent,
         personas=personas,
         stats={p.id: store.resident_stats(p.id) for p in personas},
-        subscribed=subscribed,
     )
 
 
@@ -185,17 +183,20 @@ def bots_page(request: Request, store: StoreDep):
 
 
 @router.get("/about", response_class=HTMLResponse)
-def about_page(request: Request):
-    return render(request, "about.html", active_nav="about", page_title="About")
-
-
-@router.post("/subscribe")
-def subscribe(email: Annotated[str, Form()] = ""):
-    email = email.strip()
-    if not EMAIL_RE.match(email):
-        return RedirectResponse("/?subscribed=invalid#subscribe", status_code=303)
-    log.info("newsletter signup: %s", email)
-    return RedirectResponse("/?subscribed=1#subscribe", status_code=303)
+def about_page(request: Request, store: StoreDep):
+    days = store.list_days()
+    station_log = [
+        ("Format", "One playlist a day"),
+        ("Drops at", config.GENERATION_TIME_LABEL),
+        ("Listening to", "Greenpoint, 11222"),
+        ("Residents", f"{len(store.personas())} bots"),
+        ("Inputs read", f"{len(store.input_descriptions())} readings"),
+        ("Per playlist", f"{len(days[0].tracks)} tracks" if days else "—"),
+        ("On air since", h.month_day_year(days[-1].date) if days else "—"),
+    ]
+    return render(
+        request, "about.html", active_nav="about", page_title="About", station_log=station_log
+    )
 
 
 @router.get("/healthz")

@@ -80,6 +80,11 @@ def long_date(d: date) -> str:
     return f"{_WEEKDAYS[d.weekday()]} {d:%m.%d.%Y}"
 
 
+def month_day_year(d: date) -> str:
+    """'Oct 15, 2026'."""
+    return f"{_MONTHS[d.month - 1][:3]} {d.day}, {d.year}"
+
+
 def short_date(d: date) -> str:
     return f"{d:%m.%d.%Y}"
 

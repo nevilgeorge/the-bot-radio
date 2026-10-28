@@ -291,8 +291,6 @@ described above.
 | `BOT_RADIO_S3_BUCKET` | unset (local mode) |
 | `BOT_RADIO_S3_PREFIX` | empty |
 | `BOT_RADIO_SITE_URL` | `https://thebotradio.com` |
-| `BOT_RADIO_INSTAGRAM_URL` | `#` |
-| `BOT_RADIO_SPOTIFY_PROFILE_URL` | `#` |
 
 ## Layout
 

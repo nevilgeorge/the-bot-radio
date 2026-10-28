@@ -1161,104 +1161,11 @@ a.resident-card:hover .resident-card__link {
 }
 
 /* --------------------------------------------------------------------------
-   Forms
-   -------------------------------------------------------------------------- */
-.input {
-  min-height: 48px;
-  min-width: 0;
-  padding: 0 16px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-round);
-  background: var(--bg);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-size: 14px;
-}
-
-.input::placeholder {
-  color: var(--text-3);
-  opacity: 1;
-}
-
-.input:hover {
-  border-color: var(--text-3);
-}
-
-/* --------------------------------------------------------------------------
    Footer
    -------------------------------------------------------------------------- */
 .site-footer {
   border-top: 1px solid var(--line);
   background: var(--bg-sunken);
-}
-
-.footer-main {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 40px;
-  padding-block: 56px 40px;
-}
-
-.newsletter {
-  flex: 1 1 360px;
-  min-width: 0;
-  scroll-margin-top: 24px;
-}
-
-.newsletter__form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.newsletter__label {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: clamp(26px, 2.4vw, 32px);
-  line-height: 1;
-  text-transform: uppercase;
-}
-
-.newsletter__row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.newsletter__row .input {
-  flex: 1 1 220px;
-}
-
-.newsletter__msg {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  color: var(--green);
-}
-
-.newsletter__msg--error {
-  color: var(--amber);
-}
-
-.footer-links {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 48px;
-  font-family: var(--font-mono);
-  font-size: 13px;
-}
-
-.footer-links ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.footer-links a {
-  display: inline-block;
-  padding: 12px 0;
 }
 
 .footer-bar {
@@ -1270,18 +1177,6 @@ a.resident-card:hover .resident-card__link {
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-3);
-}
-
-.footer-bar--divided {
-  padding-top: 20px;
-  border-top: 1px solid var(--line);
-}
-
-@media (max-width: 720px) {
-  .footer-main {
-    gap: 32px;
-    padding-block: 40px 24px;
-  }
 }
 
 /* --------------------------------------------------------------------------
@@ -2216,35 +2111,97 @@ a.resident-card:hover .resident-card__link {
   padding-block: 56px 80px;
 }
 
-.about-how {
+/* Hero: intro + Station log panel */
+.about-hero {
+  align-items: flex-start;
+}
+
+.about-hero__main {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.about-hero__title {
+  font-size: clamp(64px, 8vw, 104px);
+}
+
+.about-hero__main .lede {
+  max-width: 640px;
+}
+
+.about-log__title {
+  margin-bottom: 8px;
+}
+
+.about-log__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding-block: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.about-log__value {
+  margin: 0;
+  text-align: right;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+/* Sections below the hero */
+.about-section {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
+.about-section--ruled {
+  padding-top: 48px;
+  border-top: 1px solid var(--line);
+}
+
+/* How it works: one ruled grid with shared hairlines (flex, so a wrapped row stretches) */
 .about-steps {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
-  gap: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--line);
+  overflow: hidden;
 }
 
 .about-step {
+  flex: 1 1 280px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
   min-width: 0;
   padding: 28px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-card);
   background: var(--bg-raised);
 }
 
-.about-step__n {
+.about-step__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
   font-family: var(--font-mono);
   font-size: 13px;
+  color: var(--text-3);
+}
+
+.about-step__n {
   color: var(--green);
 }
 
@@ -2258,6 +2215,7 @@ a.resident-card:hover .resident-card__link {
 }
 
 .about-step__body {
+  flex-grow: 1;
   font-size: 16px;
   line-height: 1.55;
   color: var(--text-2);
@@ -2265,38 +2223,48 @@ a.resident-card:hover .resident-card__link {
 
 .about-step__link {
   align-self: flex-start;
-  margin-top: auto;
-  padding: 12px 0;
+  padding-top: 12px;
   font-family: var(--font-mono);
   font-size: 13px;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.about-split {
-  display: flex;
+/* Credits: homage text + Data sources table */
+.about-credits {
+  flex-direction: row;
   flex-wrap: wrap;
-  gap: 24px 48px;
-  padding-top: 48px;
-  border-top: 1px solid var(--line);
+  align-items: flex-start;
+  gap: 40px 48px;
 }
 
-.about-split > * {
-  min-width: 0;
+.about-credits__text {
+  flex: 1 1 360px;
 }
 
-.about-split__title {
-  flex: 1 1 260px;
-  line-height: 0.95;
-}
-
-.about-split__body {
-  flex: 2 1 480px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  font-size: clamp(16px, 1.25vw, 17px);
+.about-credits__text .body {
   line-height: 1.6;
-  color: var(--text-2);
+}
+
+.about-sources {
+  flex: 2 1 520px;
+  overflow-x: auto;
+}
+
+.about-sources__all {
+  padding-block: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.about-sources .day-log th,
+.about-sources .day-log td {
+  padding: 12px 12px 12px 0;
+}
+
+.about-sources .day-log thead th {
+  padding-block: 8px;
 }
 
 @media (max-width: 720px) {
@@ -2309,8 +2277,11 @@ a.resident-card:hover .resident-card__link {
     padding: 20px;
   }
 
-  .about-split {
-    gap: 16px;
+  .about-section--ruled {
     padding-top: 32px;
+  }
+
+  .about-credits {
+    gap: 24px;
   }
 }

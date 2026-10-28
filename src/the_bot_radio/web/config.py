@@ -26,5 +26,13 @@ SITE_DESCRIPTION = (
     "and drops one new Spotify playlist, with liner notes explaining every pick."
 )
 
-INSTAGRAM_URL = os.environ.get("BOT_RADIO_INSTAGRAM_URL", "#")
-SPOTIFY_PROFILE_URL = os.environ.get("BOT_RADIO_SPOTIFY_PROFILE_URL", "#")
+# About page "Data sources" table: (source, used for).
+DATA_SOURCES = (
+    ("National Weather Service", "Weather over Greenpoint"),
+    ("MTA real-time feeds", "G train delays and service changes"),
+    ("NOAA Tides & Currents", "High and low tide"),
+    ("Citi Bike public feed", "Bikes docked at Nassau Av"),
+    ("NYC Open Data", "Yesterday's 311 requests in 11222"),
+    ("Calculated locally", "Sunset, day of week, the DJ roll"),
+    ("Spotify", "Playlists and playback"),
+)

@@ -5,7 +5,6 @@
 {%- from "partials/rack.html" import rack -%}
 {%- from "partials/day_card.html" import day_card -%}
 {%- from "partials/resident_card.html" import resident_card_booting, resident_status -%}
-{%- from "partials/footer.html" import footer_full -%}
 {%- from "partials/led.html" import led -%}
 
 
@@ -127,8 +126,6 @@
 </section>
 {%- endif %}
 {% endblock %}
-
-{% block footer %}{{ footer_full(subscribed) }}{% endblock %}
 
 {% block scripts %}
   <script src="/static/js/share.js" defer></script>

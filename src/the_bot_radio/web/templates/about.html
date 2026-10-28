@@ -6,18 +6,36 @@
 ] -%}
 {% block content %}
 <div class="container about-page">
-  <header class="stack about-intro">
-    <p class="kicker">About</p>
-    <h1 class="h1">A radio station with no humans in the booth</h1>
-    <p class="lede">The Bot Radio is one playlist a day, picked by a bot that pays far too much attention to Greenpoint. It reads the weather, the G train, the tide and the neighborhood's complaints, then tries to make music that fits the day.</p>
-  </header>
+  <section class="split about-hero" aria-labelledby="about-title">
+    <div class="split__main about-hero__main">
+      <p class="kicker">About</p>
+      <h1 class="h1 about-hero__title" id="about-title">A radio station with no humans in the booth</h1>
+      <p class="lede">The Bot Radio is one playlist a day, picked by a bot that pays far too much attention to Greenpoint. It reads the weather, the G train, the tide and the neighborhood's complaints, then tries to make music that fits the day.</p>
+    </div>
+    <aside class="split__side panel" aria-labelledby="about-log-title">
+      <h2 class="panel-title about-log__title" id="about-log-title">Station log</h2>
+      <dl class="about-log">
+        {%- for label, value in station_log %}
+        <div class="about-log__row">
+          <dt class="label">{{ label }}</dt>
+          <dd class="about-log__value">{{ value }}</dd>
+        </div>
+        {%- endfor %}
+      </dl>
+    </aside>
+  </section>
 
-  <section class="about-how" aria-labelledby="about-how-title">
-    <h2 class="h2 h2--md" id="about-how-title">How it works</h2>
+  <section class="about-section" aria-labelledby="about-how-title">
+    <div class="section-head">
+      <div>
+        <p class="kicker">{{ config.GENERATION_TIME_LABEL }}, every day</p>
+        <h2 class="h2" id="about-how-title">How it works</h2>
+      </div>
+    </div>
     <ol class="about-steps">
       {%- for n, time, title, body, link, href in steps %}
       <li class="about-step">
-        <span class="about-step__n">{{ n }} · {{ time }}</span>
+        <span class="about-step__head"><span class="about-step__n">{{ n }}</span><span>{{ time }}</span></span>
         <h3 class="about-step__title">{{ title }}</h3>
         <p class="about-step__body">{{ body }}</p>
         <a class="about-step__link" href="{{ href }}">{{ link }}</a>
@@ -26,11 +44,33 @@
     </ol>
   </section>
 
-  <section class="about-split" aria-labelledby="about-homage-title">
-    <h2 class="h2 h2--md about-split__title" id="about-homage-title">An homage</h2>
-    <div class="about-split__body">
-      <p>This project is an affectionate nod to Brooklyn's independent online radio scene and the people who keep it running, live, every day. We're not affiliated with any radio station, and we'd never claim a bot does it better.</p>
-      <p>Playback is through Spotify. Data comes from public sources: the National Weather Service, the MTA, NOAA, Citi Bike and NYC Open Data.</p>
+  <section class="about-section about-section--ruled about-credits" aria-labelledby="about-homage-title">
+    <div class="stack about-credits__text">
+      <p class="kicker">Credits</p>
+      <h2 class="h2" id="about-homage-title">An homage</h2>
+      <p class="body">We are fans of <a href="https://www.thelotradio.com/" rel="noopener">The Lot Radio</a>, Brooklyn's independent online radio station and the people who keep it running, live, every day. <a href="https://shop.thelotradio.com/" rel="noopener">Go support them</a>. We're not affiliated with any radio station, and we'd never claim a bot does it better.</p>
+    </div>
+    <div class="panel about-sources">
+      <div class="panel__head">
+        <h3 class="panel-title" id="about-sources-title">Data sources</h3>
+        <a class="about-sources__all" href="/inputs">All inputs →</a>
+      </div>
+      <table class="day-log" aria-labelledby="about-sources-title">
+        <thead>
+          <tr>
+            <th scope="col">Source</th>
+            <th scope="col">Used for</th>
+          </tr>
+        </thead>
+        <tbody>
+          {%- for source, use in config.DATA_SOURCES %}
+          <tr>
+            <th scope="row">{{ source }}</th>
+            <td>{{ use }}</td>
+          </tr>
+          {%- endfor %}
+        </tbody>
+      </table>
     </div>
   </section>
 </div>

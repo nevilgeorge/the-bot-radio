@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from the_bot_radio.resources import RESOURCE_DIR
 from the_bot_radio.web import main as web_main
 from the_bot_radio.web.config import TZ
 
@@ -365,22 +366,33 @@ def test_today_residents_before_todays_record(client: TestClient, freeze_today):
     assert "On air today" not in client.get("/").text
 
 
-# ---- subscribe ---------------------------------------------------------------------
+# ---- about ----------------------------------------------------------------------------
 
 
-def test_subscribe_valid_email(client: TestClient):
-    r = client.post("/subscribe", data={"email": "dj@example.com"}, follow_redirects=False)
-    assert r.status_code == 303
-    assert r.headers["location"].startswith("/?subscribed=1")
+def test_about_station_log_comes_from_store(client: TestClient):
+    html = client.get("/about").text
+    log = dict(re.findall(r"<dt[^>]*>(.*?)</dt>\s*<dd[^>]*>(.*?)</dd>", html))
+    personas = json.loads((RESOURCE_DIR / "personas.json").read_text())
+    assert log["Residents"] == f"{len(personas)} bots"
+    assert log["On air since"] == "Oct 15, 2026"  # earliest fixture day
+    assert log["Drops at"] == "06:00 ET"
 
 
-@pytest.mark.parametrize("email", ["", "not-an-email", "a@b", "two words@x.com"])
-def test_subscribe_invalid_email(client: TestClient, email: str):
-    r = client.post("/subscribe", data={"email": email}, follow_redirects=False)
-    assert r.status_code == 303
-    assert "subscribed=invalid" in r.headers["location"]
+def test_about_sections(client: TestClient):
+    html = client.get("/about").text
+    assert h1_count(html) == 1
+    rows = re.findall(r'<th scope="row">(.*?)</th>', html)
+    assert len(rows) == 7
+    assert "NOAA Tides &amp; Currents" in rows
+    for href in ["/bots", "/inputs", "/"]:
+        assert f'href="{href}"' in html
+    assert 'href="https://www.thelotradio.com/" rel="noopener"' in html
+    assert 'href="https://shop.thelotradio.com/" rel="noopener"' in html
+    assert "Say hi" not in html
 
 
-def test_subscribed_confirmation_page_renders(client: TestClient):
-    assert client.get("/?subscribed=1").status_code == 200
-    assert client.get("/?subscribed=invalid").status_code == 200
+def test_today_has_no_newsletter_footer(client: TestClient):
+    html = client.get("/").text
+    assert "Get the drop in your inbox" not in html
+    assert 'action="/subscribe"' not in html
+    assert client.post("/subscribe", data={"email": "dj@example.com"}).status_code in (404, 405)

@@ -172,6 +172,10 @@ def test_month_helpers():
     assert h.month_name("2026-12") == "December"
 
 
+def test_month_day_year():
+    assert h.month_day_year(date(2026, 10, 5)) == "Oct 5, 2026"
+
+
 def test_resident_status():
     today = date(2026, 10, 26)
     assert h.resident_status(today, today) == h.ResidentStatus("On air today", True)
