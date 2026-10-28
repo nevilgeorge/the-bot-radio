@@ -36,10 +36,13 @@ JPEG_MAGIC = b"\xff\xd8\xff"
 class SpotifyError(Exception):
     """A non-2xx response from Spotify, with the status and Spotify's error message."""
 
-    def __init__(self, status_code: int, message: str) -> None:
+    def __init__(
+        self, status_code: int, message: str, *, spotify_playlist_id: str | None = None
+    ) -> None:
         super().__init__(f"Spotify {status_code}: {message}")
         self.status_code = status_code
         self.message = message
+        self.spotify_playlist_id = spotify_playlist_id
 
 
 @dataclass(frozen=True)
@@ -86,6 +89,7 @@ class SpotifyPlaylist(BaseModel):
     snapshot_id: str
     external_url: str | None = None
     tracks: list[SpotifyTrack] = []
+    item_count: int | None = None
 
 
 def build_track_query(title: str, artist: str) -> str:
@@ -139,6 +143,11 @@ def _require_playlist_items_page(items_page: Any) -> dict[str, Any]:
     if (
         not isinstance(items_page, dict)
         or not isinstance(items_page.get("items"), list)
+        or (items_page.get("next") is not None and not isinstance(items_page["next"], str))
+        or (
+            "total" in items_page
+            and (type(items_page["total"]) is not int or items_page["total"] < 0)
+        )
         or any(
             not isinstance(item_row, dict)
             or not ("item" in item_row or "track" in item_row)
@@ -226,7 +235,11 @@ class SpotifyService:
     async def _request(
         self, method: str, path_or_url: str, **request_kwargs: Any
     ) -> httpx.Response:
-        """Send an authorized API request; refresh once on 401 and wait once on 429."""
+        """Send a request, retrying only explicit 401/429 rejections once each.
+
+        Transport errors and cancellation propagate: a mutation may already have reached
+        Spotify, so repeating it could create another playlist or duplicate its tracks.
+        """
         url = path_or_url if path_or_url.startswith("https://") else f"{API_BASE}{path_or_url}"
         if self.access_token is None or time.monotonic() >= self.access_token_expires_at:
             await self.refresh_token()
@@ -272,7 +285,24 @@ class SpotifyService:
             "/me/playlists",
             json={"name": name, "description": description, "public": public},
         )
-        return _parse_playlist(response.json(), tracks=[])
+        playlist_payload: Any = None
+        try:
+            playlist_payload = response.json()
+            return _parse_playlist(playlist_payload, tracks=[])
+        except (KeyError, TypeError, ValueError) as error:
+            returned_id = playlist_payload.get("id") if isinstance(playlist_payload, dict) else None
+            known_playlist_id = (
+                returned_id if isinstance(returned_id, str) and returned_id.strip() else None
+            )
+            raise SpotifyError(
+                502,
+                "create-playlist returned a malformed acknowledgement",
+                spotify_playlist_id=known_playlist_id,
+            ) from error
+
+    async def set_playlist_visibility(self, playlist_id: str, public: bool) -> None:
+        """Change a bot-owned playlist's visibility; callers verify the result by reading it."""
+        await self._request("PUT", f"/playlists/{playlist_id}", json={"public": public})
 
     async def get_current_user_playlists(self) -> list[dict[str, Any]]:
         """Return every playlist visible to the authorized user, following all list pages.
@@ -328,14 +358,27 @@ class SpotifyService:
         else:
             items_page = _playlist_items_page(playlist_payload)
         tracks = _parse_playlist_items(items_page.get("items") or [])
+        item_count = len(items_page.get("items") or [])
+        expected_total = items_page.get("total")
         next_page_url = items_page.get("next")
+        visited_pages: set[str] = set()
         while next_page_url:
+            if not isinstance(next_page_url, str) or next_page_url in visited_pages:
+                raise SpotifyError(502, "playlist contents returned an invalid or repeated page")
+            visited_pages.add(next_page_url)
             items_page = (await self._request("GET", next_page_url)).json()
             if require_contents:
                 items_page = _require_playlist_items_page(items_page)
+                if items_page.get("total", expected_total) != expected_total:
+                    raise SpotifyError(502, "playlist contents changed while reading pages")
             tracks.extend(_parse_playlist_items(items_page.get("items") or []))
+            item_count += len(items_page.get("items") or [])
             next_page_url = items_page.get("next")
-        return _parse_playlist(playlist_payload, tracks=tracks)
+        if require_contents and expected_total is not None and item_count != expected_total:
+            raise SpotifyError(502, "playlist contents malformed or incomplete; total mismatch")
+        playlist = _parse_playlist(playlist_payload, tracks=tracks)
+        playlist.item_count = item_count
+        return playlist
 
     async def add_items_to_playlist(
         self, playlist_id: str, track_uris: Sequence[str], position: int | None = None
@@ -356,7 +399,17 @@ class SpotifyService:
             response = await self._request(
                 "POST", f"/playlists/{playlist_id}/items", json=request_body
             )
-            snapshot_id = response.json()["snapshot_id"]
+            try:
+                acknowledgement = response.json()
+            except ValueError as error:
+                raise SpotifyError(502, "add-items returned a malformed acknowledgement") from error
+            if (
+                not isinstance(acknowledgement, dict)
+                or not isinstance(acknowledgement.get("snapshot_id"), str)
+                or not acknowledgement["snapshot_id"].strip()
+            ):
+                raise SpotifyError(502, "add-items returned a malformed acknowledgement")
+            snapshot_id = acknowledgement["snapshot_id"]
         return snapshot_id
 
     async def upload_playlist_cover(self, playlist_id: str, jpeg_bytes: bytes) -> None:

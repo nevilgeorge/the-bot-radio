@@ -75,6 +75,18 @@ def _validate_playlist(
         """Append one stable, positional validation failure."""
         violations.append(Violation(code=code, message=message, position=position, field=field))
 
+    if not 2 <= len(parsed_proposal.title.split()) <= 4:
+        add_violation(
+            "invalid_title_length", "Use a descriptive title of two to four words.", field="title"
+        )
+    normalized_title = normalize_artist(parsed_proposal.title)
+    if any(normalized_title == normalize_artist(track.title) for track in parsed_proposal.tracks):
+        add_violation(
+            "title_matches_track",
+            "Describe the playlist rather than copying a selected track's title.",
+            field="title",
+        )
+
     if [track.position for track in parsed_proposal.tracks] != list(range(1, 11)):
         add_violation("invalid_positions", "Track positions must be 1 through 10 in order.")
     if sum(track.wildcard for track in parsed_proposal.tracks) != 5:
@@ -196,7 +208,7 @@ def assemble_daily_record(
     return DailyRecord(
         date=context.run_date,
         dj=context.dj_id,
-        title=proposal.title,
+        title=f"{context.run_date.isoformat()} — {proposal.title}",
         description=proposal.description,
         liner_notes=proposal.liner_notes,
         tracks=[

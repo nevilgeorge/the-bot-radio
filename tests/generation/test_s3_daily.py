@@ -116,7 +116,7 @@ async def test_s3_generation_replaces_day_and_archives_each_output(
     assert location == f"s3://{BUCKET}/{DAILY_KEY}"
     record = DailyRecord.model_validate_json(client.objects[DAILY_KEY])
     assert record.date == RUN_DATE
-    assert record.publication_status == "pending"
+    assert record.publication_status == "published"
     assert not (generation_services.data_dir / "days").exists()
     assert not (generation_services.data_dir / "runs").exists()
     staging_directory, staged_outcome = staged_diagnostics(generation_services)
@@ -137,7 +137,9 @@ async def test_s3_generation_replaces_day_and_archives_each_output(
     assert await generate_in_s3(generation_services, client) == location
     replacement_content = client.objects[DAILY_KEY]
     assert replacement_content != original_content
-    assert DailyRecord.model_validate_json(replacement_content).title == "A fresh rainy playlist"
+    assert DailyRecord.model_validate_json(replacement_content).title == (
+        f"{RUN_DATE} — A fresh rainy playlist"
+    )
     assert client.write_calls == 2
     assert generation_services.agent.run.await_count == 2
     archived_outputs = [

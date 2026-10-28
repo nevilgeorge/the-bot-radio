@@ -262,6 +262,55 @@
       ],
       "title": "Spotify Playlist Id"
     },
+    "spotify_playlist_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spotify Playlist Url"
+    },
+    "spotify_snapshot_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spotify Snapshot Id"
+    },
+    "spotify_playlist_public": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Spotify Playlist Public"
+    },
+    "published_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Published At"
+    },
     "prompt": {
       "minLength": 1,
       "title": "Prompt",

@@ -103,6 +103,27 @@ def test_valid_proposal_allows_shared_featured_artists_and_missing_search_urls()
     )
 
 
+@pytest.mark.parametrize("title", ["Morning", "One two three four five", "   "])
+def test_title_requires_two_to_four_whitespace_words(title: str) -> None:
+    proposal, context = make_inputs()
+    proposal["title"] = title
+    assert "invalid_title_length" in violation_codes(proposal, context)
+
+
+@pytest.mark.parametrize("title", ["Morning\train", "A slow morning", "A very slow morning"])
+def test_title_accepts_two_to_four_whitespace_words(title: str) -> None:
+    proposal, context = make_inputs()
+    proposal["title"] = title
+    assert PlaylistValidator(context).validate_playlist(proposal).valid
+
+
+@pytest.mark.parametrize("title", ["Song 1", "  sOnG\t 1  ", "SONG 10"])
+def test_title_cannot_copy_selected_track_after_normalization(title: str) -> None:
+    proposal, context = make_inputs()
+    proposal["title"] = title
+    assert "title_matches_track" in violation_codes(proposal, context)
+
+
 def test_validator_observes_search_evidence_added_after_construction() -> None:
     """Keep tool search evidence live in the validator's wrapped run context."""
     proposal, context = make_inputs()
@@ -248,6 +269,7 @@ def test_assembly_uses_trusted_evidence_and_pending_publication() -> None:
         PlaylistProposal.model_validate(proposal), context, "Prompt", "Model", NOW
     )
     assert record.date == context.run_date
+    assert record.title == "2026-10-27 — Morning rain"
     assert record.dj == context.dj_id
     assert record.mood == context.mood
     assert record.publication_status == "pending"

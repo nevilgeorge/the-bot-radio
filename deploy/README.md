@@ -163,7 +163,7 @@ Terraform and must never enter its configuration, outputs, plans, or state.
 `personas.json` and `shared_catalog.jsonl` ship in the application package under
 `the_bot_radio/resources/`. Keep `inputs.json` under `BOT_RADIO_DATA_DIR` even in S3 mode. The initial remote load must succeed before
 startup completes. Empty or entirely hidden/invalid data is allowed. Later refreshes wait
-300 seconds after the preceding attempt, retain the last complete snapshot on infrastructure
+60 seconds after the preceding attempt, retain the last complete snapshot on infrastructure
 failure, and log failures/recovery. `/healthz` reports the latest cached visible day and
 continues returning its existing successful response even when that cache is stale. Check
 application logs when investigating freshness. Shutdown drains workers before closing the SDK.
@@ -236,7 +236,7 @@ invalid-record warnings, S3 errors, and refresh recovery. An empty listing has n
 to read; verify the empty-state pages and `latest_day: null` instead.
 
 The initial remote load must succeed before startup completes. Empty or entirely
-hidden/invalid data is allowed. Later refreshes wait 300 seconds after the preceding attempt,
+hidden/invalid data is allowed. Later refreshes wait 60 seconds after the preceding attempt,
 retain the entire last complete snapshot on infrastructure failure, and log failures/recovery.
 `/healthz` reports the latest cached visible day and remains successful when the cache is
 stale. It proves availability, not freshness. Compare S3 with rendered records and review logs

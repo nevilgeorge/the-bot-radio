@@ -150,7 +150,7 @@ async def test_s3_live_generation_history_and_archived_replacements(
     assert committed_content is not None
     record = DailyRecord.model_validate_json(committed_content)
     assert committed_content == (record.model_dump_json(indent=2) + "\n").encode()
-    assert record.publication_status == "pending"
+    assert record.publication_status == "published"
     prepared_run = services.prepared_runs[-1]
     history_directory = prepared_run.workspace / "history"
     assert (history_directory / f"{published_date}.json").read_bytes() == history_content
@@ -182,7 +182,9 @@ async def test_s3_live_generation_history_and_archived_replacements(
     replacement_content = await storage.daily.read(RUN_DATE)
     assert replacement_content is not None
     assert replacement_content != committed_content
-    assert DailyRecord.model_validate_json(replacement_content).title == "A fresh rainy playlist"
+    assert DailyRecord.model_validate_json(replacement_content).title == (
+        f"{RUN_DATE} — A fresh rainy playlist"
+    )
     assert (
         services.agent.run.await_count,
         services.claude.score_mood.await_count,
@@ -218,15 +220,12 @@ async def test_s3_live_generation_history_and_archived_replacements(
         ) as web_client:
             assert (await web_client.get("/healthz")).json() == {
                 "ok": True,
-                "latest_day": published_date.isoformat(),
+                "latest_day": RUN_DATE.isoformat(),
             }
-            assert (await web_client.get(f"/index/{RUN_DATE}")).status_code == 404
+            assert (await web_client.get(f"/index/{RUN_DATE}")).status_code == 200
             assert (await web_client.get(f"/index/{pending_date}")).status_code == 404
-            # Fixture replacement only: this does not implement a publisher.
-            published_payload = json.loads(replacement_content)
-            published_payload.update(publication_status="published", spotify_playlist_id="p" * 22)
-            await storage.put_day(RUN_DATE, json.dumps(published_payload).encode())
-            await application.state.daily_cache.refresh()
+            # Development publications are public and visible without a manual status change.
+            assert record.spotify_playlist_public is True
             assert (await web_client.get("/healthz")).json() == {
                 "ok": True,
                 "latest_day": RUN_DATE.isoformat(),

@@ -26,8 +26,9 @@ from the_bot_radio.generation.tools import PlaylistTools
 from the_bot_radio.generation.validation import PlaylistValidator, assemble_daily_record
 from the_bot_radio.services.inputs import runner
 from the_bot_radio.services.inputs.base import TZ, Reading
-from the_bot_radio.services.spotify_service import SpotifyTrack
+from the_bot_radio.services.spotify_service import SpotifyPlaylist, SpotifyTrack
 from the_bot_radio.web.models import Mood
+from the_bot_radio.web.store import Store
 
 pytestmark = pytest.mark.anyio
 RUN_DATE = date(2026, 10, 27)
@@ -107,9 +108,54 @@ def generation_services(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Simp
             duration_ms=track["duration_ms"],
             explicit=False,
         )
-        for track in tracks[5:]
+        for track in tracks
     ]
-    spotify_service = SimpleNamespace(search_tracks=AsyncMock(return_value=spotify_tracks))
+    playlists: dict[str, SpotifyPlaylist] = {}
+
+    async def create_playlist(name: str, description: str, public: bool = True) -> SpotifyPlaylist:
+        """Allocate a fresh public playlist for each independent generation."""
+        playlist_id = f"{len(playlists) + 100:022d}"
+        playlist = SpotifyPlaylist(
+            id=playlist_id,
+            uri=f"spotify:playlist:{playlist_id}",
+            name=name,
+            description=description,
+            public=public,
+            snapshot_id="created",
+        )
+        playlists[playlist_id] = playlist
+        return playlist.model_copy(deep=True)
+
+    async def add_items(
+        playlist_id: str, track_uris: list[str], position: int | None = None
+    ) -> str:
+        """Retain the exact insertion order and expose a distinct contents snapshot."""
+        playlist = playlists[playlist_id]
+        selected_tracks = {track.uri: track for track in spotify_tracks}
+        inserted_tracks = [selected_tracks[uri] for uri in track_uris]
+        insertion_position = len(playlist.tracks) if position is None else position
+        playlist.tracks[insertion_position:insertion_position] = inserted_tracks
+        playlist.snapshot_id = "filled"
+        return playlist.snapshot_id
+
+    async def get_playlist(playlist_id: str, *, require_contents: bool = False) -> SpotifyPlaylist:
+        """Read the current remote state without sharing mutable response objects."""
+        assert require_contents
+        return playlists[playlist_id].model_copy(deep=True)
+
+    async def set_visibility(playlist_id: str, public: bool) -> None:
+        """Promote the remote playlist only when explicitly requested."""
+        playlists[playlist_id].public = public
+        playlists[playlist_id].snapshot_id = "public"
+
+    spotify_service = SimpleNamespace(
+        search_tracks=AsyncMock(return_value=spotify_tracks[5:]),
+        create_playlist=AsyncMock(side_effect=create_playlist),
+        add_items_to_playlist=AsyncMock(side_effect=add_items),
+        get_playlist=AsyncMock(side_effect=get_playlist),
+        set_playlist_visibility=AsyncMock(side_effect=set_visibility),
+        playlists=playlists,
+    )
 
     prepared_runs: list[PreparedRun] = []
     prepare_run = daily.prepare_run
@@ -203,7 +249,7 @@ async def test_regenerates_an_existing_day(
     assert await generate(services) == output_path
 
     replacement = DailyRecord.model_validate_json(output_path.read_bytes())
-    assert replacement.title == "Rain on the avenue"
+    assert replacement.title == f"{RUN_DATE} — Rain on the avenue"
     assert replacement.date == RUN_DATE
     assert output_path.read_bytes() != previous_bytes
     services.agent.run.assert_awaited_once()
@@ -337,12 +383,28 @@ async def test_offline_end_to_end_and_fresh_rerun(generation_services):
     services = generation_services
     output_path = await generate(services)
     record = DailyRecord.model_validate_json(Path(output_path).read_bytes())
-    assert record.publication_status == "pending"
-    assert record.spotify_playlist_id is None
+    assert record.publication_status == "published"
+    assert record.spotify_playlist_id is not None
     assert len(record.tracks) == 10
     assert sum(track.wildcard for track in record.tracks) == 5
     assert record.inputs[1].raw == {"forecast": "rain"}
     assert services.spotify.search_tracks.await_count == 1
+    services.spotify.create_playlist.assert_awaited_once_with(
+        record.title, record.description, public=True
+    )
+    services.spotify.add_items_to_playlist.assert_awaited_once_with(
+        record.spotify_playlist_id,
+        [f"spotify:track:{track.spotify_id}" for track in record.tracks],
+        position=0,
+    )
+    services.spotify.get_playlist.assert_awaited_once_with(
+        record.spotify_playlist_id, require_contents=True
+    )
+    services.spotify.set_playlist_visibility.assert_not_awaited()
+    assert record.spotify_playlist_public is True
+    assert record.spotify_playlist_url == (
+        f"https://open.spotify.com/playlist/{record.spotify_playlist_id}"
+    )
     artifacts = list((services.data_dir / "runs/2026-10-27").glob("*/diagnostics.json"))
     assert len(artifacts) == 1
     diagnostics = json.loads(artifacts[0].read_text())
@@ -352,7 +414,7 @@ async def test_offline_end_to_end_and_fresh_rerun(generation_services):
     assert "mood_usage" in diagnostics
     proposal_payload = json.loads(artifacts[0].with_name("proposal.json").read_text())
     saved_proposal = PlaylistProposal.model_validate(proposal_payload)
-    assert saved_proposal.title == record.title
+    assert record.title == f"{RUN_DATE} — {saved_proposal.title}"
     assert [track.model_dump() for track in saved_proposal.tracks] == [
         track.model_dump(exclude={"artist"}) for track in record.tracks
     ]
@@ -389,7 +451,9 @@ async def test_offline_end_to_end_and_fresh_rerun(generation_services):
     assert await generate(services) == output_path
     replacement_bytes = output_path.read_bytes()
     assert replacement_bytes != original_bytes
-    assert DailyRecord.model_validate_json(replacement_bytes).title == "A fresh rainy playlist"
+    assert DailyRecord.model_validate_json(replacement_bytes).title == (
+        f"{RUN_DATE} — A fresh rainy playlist"
+    )
     rerun_artifacts = list((services.data_dir / "runs/2026-10-27").glob("*/diagnostics.json"))
     assert len(rerun_artifacts) == 2
     assert {json.loads(path.read_text())["status"] for path in rerun_artifacts} == {"accepted"}
@@ -398,6 +462,7 @@ async def test_offline_end_to_end_and_fresh_rerun(generation_services):
     archived_bytes = [path.with_name(f"{RUN_DATE}.json").read_bytes() for path in rerun_artifacts]
     assert set(archived_bytes) == {original_bytes, replacement_bytes}
     assert services.agent.run.await_count == 2
+    assert len({json.loads(content)["spotify_playlist_id"] for content in archived_bytes}) == 2
 
 
 async def test_verbose_generation_streams_transcript_to_stderr(generation_services, capsys):
@@ -502,8 +567,8 @@ async def test_host_assembles_once_with_trusted_metadata(generation_services, mo
     assert record.inputs[1].raw == {"forecast": "rain"}
     assert record.model == daily.MODEL
     assert record.generated_at == NOW
-    assert record.publication_status == "pending"
-    assert record.spotify_playlist_id is None
+    assert record.publication_status == "published"
+    assert record.spotify_playlist_id is not None
     agent_arguments = services.agent.run.call_args.kwargs
     assert "context" not in agent_arguments
     assert "generated_at" not in agent_arguments
@@ -568,6 +633,7 @@ def test_cli_date_precedence_and_limits(tmp_path, monkeypatch, capsys, use_cli_d
     assert captured["limits"] == AgentLimits(12, 2.5, 75)
     assert captured["now"].tzinfo == TZ
     assert captured["verbose"] is verbose
+    assert "playlist_public" not in captured
     assert captured["daily_store"].data_dir == tmp_path
     assert captured["artifact_store"].data_dir == tmp_path
     assert captured["local_work_root"] == tmp_path / ".run-staging"
@@ -593,8 +659,26 @@ def test_cli_invalid_limits_fail_before_generation(monkeypatch, capsys, argument
 
 
 @pytest.mark.live
-async def test_live_generation_writes_only_a_pending_temporary_day(tmp_path):
+async def test_live_generation_writes_a_temporary_day_with_mocked_publication(
+    tmp_path, monkeypatch
+):
     """Opt in with RUN_LIVE=1; calls Claude/readings/search but never creates a playlist."""
+
+    async def mock_publication(record: DailyRecord, *_args: Any, **_kwargs: Any) -> DailyRecord:
+        """Keep live qualification read-only at the Spotify boundary."""
+        return DailyRecord.model_validate(
+            {
+                **record.model_dump(),
+                "publication_status": "published",
+                "spotify_playlist_id": "p" * 22,
+                "spotify_playlist_url": f"https://open.spotify.com/playlist/{'p' * 22}",
+                "spotify_snapshot_id": "qualification",
+                "spotify_playlist_public": True,
+                "published_at": datetime.now(TZ),
+            }
+        )
+
+    monkeypatch.setattr(daily, "publish_playlist", AsyncMock(side_effect=mock_publication))
     repo_data = Path(__file__).resolve().parents[2] / "data"
     catalog_path = daily.RESOURCE_DIR / "shared_catalog.jsonl"
     if not catalog_path.exists():
@@ -623,8 +707,8 @@ async def test_live_generation_writes_only_a_pending_temporary_day(tmp_path):
             spotify_service=search_only,
         )
     record = DailyRecord.model_validate_json(Path(output_path).read_bytes())
-    assert record.publication_status == "pending"
-    assert record.spotify_playlist_id is None
+    assert record.publication_status == "published"
+    assert record.spotify_playlist_id is not None
     assert len(record.tracks) == 10
     assert sum(track.wildcard for track in record.tracks) == 5
     assert Path(output_path).is_relative_to(tmp_path)
@@ -781,6 +865,17 @@ async def test_injected_uri_stores_regenerate_and_archive(generation_services, m
     ]
     assert {outcome["status"] for outcome in outcomes} == {"accepted"}
     assert len({outcome["run_id"] for outcome in outcomes}) == 2
+    archived_records = {
+        run_id: DailyRecord.model_validate_json(content)
+        for (run_id, name), content in artifact_store.artifacts.items()
+        if name == f"{RUN_DATE}.json"
+    }
+    assert set(archived_records) == {outcome["run_id"] for outcome in outcomes}
+    assert len({record.spotify_playlist_id for record in archived_records.values()}) == 2
+    assert {record.spotify_playlist_id for record in archived_records.values()} == set(
+        services.spotify.playlists
+    )
+    assert len(archived_records) == 2
 
 
 @pytest.mark.parametrize("committed", [True, False])
@@ -837,6 +932,8 @@ async def test_artifact_failure_boundaries_and_original_run_recovery(
         assert daily_store.records[RUN_DATE] != previous_bytes
     assert daily_store.write_calls == int(fail_at == "postcommit")
     assert any(str(staging_dir) in note for note in caught.value.__notes__)
+    if fail_at in {"initial", "precommit"}:
+        generation_services.spotify.create_playlist.assert_not_awaited()
     if fail_at == "initial":
         generation_services.claude.score_mood.assert_not_awaited()
         generation_services.agent.run.assert_not_awaited()
@@ -859,7 +956,7 @@ async def test_artifact_failure_boundaries_and_original_run_recovery(
     assert daily_store.write_calls == writes_before_recovery
     output_filename = f"{RUN_DATE}.json"
     staged_output = staging_dir / output_filename
-    if fail_at != "initial":
+    if fail_at not in {"initial", "precommit"}:
         assert (
             artifact_store.artifacts[original_run_id, output_filename] == staged_output.read_bytes()
         )
@@ -1114,3 +1211,61 @@ async def test_failed_run_audit_failure_retains_local_outcome(generation_service
     assert daily_store.write_calls == 1
     assert daily_store.records[RUN_DATE] == previous_bytes
     assert generation_services.agent.run.await_count == 2
+
+
+@pytest.mark.parametrize("operation", ["create", "add", "verify"])
+@pytest.mark.parametrize("cancelled", [False, True])
+async def test_publication_failure_preserves_daily_and_retains_identity(
+    generation_services: SimpleNamespace, operation: str, cancelled: bool
+) -> None:
+    """Failed or cancelled Spotify operations never replace daily data or repeat mutations."""
+    services = generation_services
+    daily_store = MemoryDailyStore()
+    previous_bytes = b"previous canonical bytes"
+    daily_store.records[RUN_DATE] = previous_bytes
+    failure = asyncio.CancelledError() if cancelled else RuntimeError("Spotify unavailable")
+    method = {
+        "create": services.spotify.create_playlist,
+        "add": services.spotify.add_items_to_playlist,
+        "verify": services.spotify.get_playlist,
+    }[operation]
+    method.side_effect = failure
+    with pytest.raises(type(failure)) as caught:
+        await generate_in_memory(services, daily_store, MemoryArtifactStore())
+    assert caught.value is failure
+    assert daily_store.records[RUN_DATE] == previous_bytes
+    assert daily_store.write_calls == 0
+    staging_dir, outcome = staged_diagnostics(services)
+    publication = json.loads((staging_dir / "publication.json").read_bytes())
+    assert outcome["status"] == "failed"
+    assert (
+        publication["progress"]
+        == {
+            "create": "creating",
+            "add": "adding_tracks",
+            "verify": "verifying_public",
+        }[operation]
+    )
+    assert services.spotify.create_playlist.await_count == 1
+    assert services.spotify.add_items_to_playlist.await_count <= 1
+    services.spotify.set_playlist_visibility.assert_not_awaited()
+    if operation == "create":
+        assert "spotify_playlist_id" not in publication
+    else:
+        playlist_id = publication["spotify_playlist_id"]
+        assert outcome["spotify_playlist_id"] == playlist_id
+        assert any(playlist_id in note for note in caught.value.__notes__)
+        assert playlist_id in services.spotify.playlists
+
+
+async def test_public_generation_is_visible_in_website_store(generation_services):
+    """Development publication creates a public Spotify playlist and is visible on the site."""
+    services = generation_services
+    output_path = await generate(services)
+    record = DailyRecord.model_validate_json(output_path.read_bytes())
+    website_store = Store(services.data_dir, resources_dir=services.data_dir)
+    visible_day = website_store.get_day(RUN_DATE)
+    assert visible_day is not None
+    assert visible_day.spotify_playlist_id == record.spotify_playlist_id
+    assert visible_day.spotify_playlist_public is True
+    assert website_store.latest_day().date == RUN_DATE

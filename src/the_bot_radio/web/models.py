@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 
 class Persona(BaseModel):
@@ -54,6 +54,10 @@ class Day(BaseModel):
     description: str = ""
     publication_status: Literal["pending", "published"] | None = None
     spotify_playlist_id: str | None
+    spotify_playlist_url: str | None = None
+    spotify_snapshot_id: str | None = None
+    spotify_playlist_public: bool | None = None
+    published_at: AwareDatetime | None = None
     prompt: str  # exact prompt sent to the model (shown on the day page)
     model: str
     generated_at: datetime  # timezone-aware

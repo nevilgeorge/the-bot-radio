@@ -62,6 +62,52 @@ def test_daily_record_json_round_trip_and_website_compatibility() -> None:
     assert website_day.tracks[0].artists == record.tracks[0].artists
 
 
+def test_published_metadata_round_trip_and_private_website_compatibility() -> None:
+    payload = daily_record_payload()
+    payload.update(
+        publication_status="published",
+        spotify_playlist_id="1" * 22,
+        spotify_playlist_url=f"https://open.spotify.com/playlist/{'1' * 22}",
+        spotify_snapshot_id="verified-snapshot",
+        spotify_playlist_public=False,
+        published_at="2026-10-27T06:01:00-04:00",
+    )
+    record = DailyRecord.model_validate(payload)
+    assert DailyRecord.model_validate_json(record.model_dump_json()) == record
+    website_day = Day.model_validate_json(record.model_dump_json())
+    assert website_day.spotify_playlist_url == record.spotify_playlist_url
+    assert website_day.spotify_snapshot_id == "verified-snapshot"
+    assert website_day.spotify_playlist_public is False
+    assert website_day.published_at == record.published_at
+
+
+@pytest.mark.parametrize("publication_status", ["pending", "published"])
+def test_historical_records_do_not_require_new_publication_metadata(
+    publication_status: str,
+) -> None:
+    payload = daily_record_payload()
+    payload.update(
+        publication_status=publication_status,
+        spotify_playlist_id="1" * 22 if publication_status == "published" else None,
+    )
+    record = DailyRecord.model_validate(payload)
+    assert record.title == "Morning light"
+    assert record.spotify_playlist_url is None
+    assert record.spotify_snapshot_id is None
+    assert record.spotify_playlist_public is None
+    assert record.published_at is None
+
+
+@pytest.mark.parametrize("record_model", [DailyRecord, Day])
+def test_publication_timestamp_must_be_timezone_aware(
+    record_model: type[DailyRecord | Day],
+) -> None:
+    payload = daily_record_payload()
+    payload["published_at"] = "2026-10-27T06:01:00"
+    with pytest.raises(ValidationError):
+        record_model.model_validate(payload)
+
+
 def test_generated_schema_files_match_canonical_models(tmp_path: Path) -> None:
     write_schemas(tmp_path)
     for filename, model in (

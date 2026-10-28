@@ -96,6 +96,10 @@ class DailyRecord(GenerationModel):
     mood: PlaylistMood
     publication_status: Literal["pending", "published"]
     spotify_playlist_id: SpotifyId | None
+    spotify_playlist_url: str | None = None
+    spotify_snapshot_id: str | None = None
+    spotify_playlist_public: bool | None = None
+    published_at: AwareDatetime | None = None
     prompt: NonemptyString
     model: NonemptyString
     generated_at: AwareDatetime

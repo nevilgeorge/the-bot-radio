@@ -166,6 +166,126 @@ async def test_create_playlist_posts_to_me_playlists(spotify):
     assert playlist.snapshot_id == create_payload["snapshot_id"]
 
 
+@pytest.mark.parametrize("public", [True, False])
+@respx.mock
+async def test_set_playlist_visibility_sends_only_public(spotify, public: bool) -> None:
+    _mock_token()
+    visibility_route = respx.put(f"{API_BASE}/playlists/{PLAYLIST_ID}").mock(
+        return_value=httpx.Response(200)
+    )
+
+    await spotify.set_playlist_visibility(PLAYLIST_ID, public=public)
+
+    assert visibility_route.call_count == 1
+    assert json.loads(visibility_route.calls.last.request.content) == {"public": public}
+
+
+async def _perform_mutation(spotify: SpotifyService, mutation: str) -> None:
+    """Exercise each publication mutation through its public service method."""
+    if mutation == "create":
+        await spotify.create_playlist("Morning Static", "Notes", public=False)
+    elif mutation == "add":
+        await spotify.add_items_to_playlist(PLAYLIST_ID, ["spotify:track:track-id"])
+    else:
+        await spotify.set_playlist_visibility(PLAYLIST_ID, public=True)
+
+
+def _mutation_route(mutation: str) -> respx.Route:
+    """Return the mocked route for a publication mutation."""
+    if mutation == "create":
+        return respx.post(f"{API_BASE}/me/playlists")
+    if mutation == "add":
+        return respx.post(f"{API_BASE}/playlists/{PLAYLIST_ID}/items")
+    return respx.put(f"{API_BASE}/playlists/{PLAYLIST_ID}")
+
+
+@pytest.mark.parametrize("mutation", ["create", "add", "visibility"])
+@respx.mock
+async def test_publication_mutations_do_not_retry_transport_errors(spotify, mutation: str) -> None:
+    _mock_token()
+    mutation_route = _mutation_route(mutation).mock(side_effect=httpx.ReadTimeout("lost response"))
+
+    with pytest.raises(httpx.ReadTimeout, match="lost response"):
+        await _perform_mutation(spotify, mutation)
+
+    assert mutation_route.call_count == 1
+
+
+@pytest.mark.parametrize("mutation", ["create", "add", "visibility"])
+@respx.mock
+async def test_publication_mutations_do_not_retry_cancellation(spotify, mutation: str) -> None:
+    _mock_token()
+    dispatched_requests: list[httpx.Request] = []
+    with anyio.CancelScope() as cancellation_scope:
+
+        async def cancel_request(request: httpx.Request) -> httpx.Response:
+            """Cancel after dispatch, while the server outcome is unknown."""
+            dispatched_requests.append(request)
+            cancellation_scope.cancel()
+            await anyio.sleep(0)
+            raise AssertionError("cancelled request continued")
+
+        _mutation_route(mutation).mock(side_effect=cancel_request)
+        await _perform_mutation(spotify, mutation)
+
+    assert cancellation_scope.cancel_called
+    assert len(dispatched_requests) == 1
+
+
+@pytest.mark.parametrize("payload", [{}, {"snapshot_id": None}, {"snapshot_id": ""}, []])
+@respx.mock
+async def test_add_items_rejects_malformed_acknowledgement_without_retry(spotify, payload) -> None:
+    _mock_token()
+    add_route = _mutation_route("add").mock(return_value=httpx.Response(201, json=payload))
+
+    with pytest.raises(SpotifyError, match="malformed acknowledgement"):
+        await _perform_mutation(spotify, "add")
+
+    assert add_route.call_count == 1
+
+
+@pytest.mark.parametrize("known_playlist_id", [None, PLAYLIST_ID])
+@respx.mock
+async def test_create_rejects_malformed_acknowledgement_without_retry(
+    spotify, known_playlist_id: str | None
+) -> None:
+    _mock_token()
+    payload = {} if known_playlist_id is None else {"id": known_playlist_id}
+    create_route = _mutation_route("create").mock(return_value=httpx.Response(201, json=payload))
+
+    with pytest.raises(SpotifyError, match="malformed acknowledgement") as error_info:
+        await _perform_mutation(spotify, "create")
+
+    assert create_route.call_count == 1
+    assert error_info.value.spotify_playlist_id == known_playlist_id
+
+
+@pytest.mark.parametrize("mutation", ["create", "add", "visibility"])
+@pytest.mark.parametrize("status_code", [401, 429])
+@respx.mock
+async def test_publication_mutations_keep_explicit_rejection_retries(
+    spotify, mutation: str, status_code: int, monkeypatch
+) -> None:
+    token_route = _mock_token()
+    monkeypatch.setattr(anyio, "sleep", AsyncMock())
+    response_payload = (
+        load_fixture("spotify", "create_playlist.json")
+        if mutation == "create"
+        else {"snapshot_id": "verified-snapshot"}
+    )
+    mutation_route = _mutation_route(mutation).mock(
+        side_effect=[
+            httpx.Response(status_code, headers={"Retry-After": "1"}),
+            httpx.Response(200, json=response_payload),
+        ]
+    )
+
+    await _perform_mutation(spotify, mutation)
+
+    assert mutation_route.call_count == 2
+    assert token_route.call_count == (2 if status_code == 401 else 1)
+
+
 @respx.mock
 async def test_get_playlist_follows_pages_and_skips_null_items(spotify):
     _mock_token()
@@ -243,6 +363,52 @@ async def test_get_playlist_strict_checks_later_pages(spotify):
     respx.get(next_url).mock(return_value=httpx.Response(200, json={"next": None}))
     with pytest.raises(SpotifyError, match="malformed or incomplete"):
         await spotify.get_playlist(playlist_payload["id"], require_contents=True)
+
+
+@pytest.mark.parametrize("field,value", [("next", 7), ("total", "3"), ("total", -1)])
+@respx.mock
+async def test_get_playlist_strict_rejects_invalid_pagination(spotify, field, value) -> None:
+    _mock_token()
+    playlist_payload = load_fixture("spotify", "get_playlist.json")
+    playlist_payload["items"][field] = value
+    respx.get(f"{API_BASE}/playlists/{playlist_payload['id']}").mock(
+        return_value=httpx.Response(200, json=playlist_payload)
+    )
+
+    with pytest.raises(SpotifyError, match="malformed or incomplete"):
+        await spotify.get_playlist(playlist_payload["id"], require_contents=True)
+
+
+@respx.mock
+async def test_get_playlist_strict_rejects_truncated_contents(spotify) -> None:
+    _mock_token()
+    playlist_payload = load_fixture("spotify", "get_playlist.json")
+    playlist_payload["items"]["items"].pop()
+    respx.get(f"{API_BASE}/playlists/{playlist_payload['id']}").mock(
+        return_value=httpx.Response(200, json=playlist_payload)
+    )
+
+    with pytest.raises(SpotifyError, match="total mismatch"):
+        await spotify.get_playlist(playlist_payload["id"], require_contents=True)
+
+
+@respx.mock
+async def test_get_playlist_strict_rejects_repeated_pages(spotify) -> None:
+    _mock_token()
+    playlist_payload = load_fixture("spotify", "get_playlist.json")
+    next_url = f"{API_BASE}/playlists/{playlist_payload['id']}/items?offset=3"
+    playlist_payload["items"]["next"] = next_url
+    respx.get(f"{API_BASE}/playlists/{playlist_payload['id']}").mock(
+        return_value=httpx.Response(200, json=playlist_payload)
+    )
+    next_route = respx.get(next_url).mock(
+        return_value=httpx.Response(200, json={"items": [], "next": next_url})
+    )
+
+    with pytest.raises(SpotifyError, match="repeated page"):
+        await spotify.get_playlist(playlist_payload["id"], require_contents=True)
+
+    assert next_route.call_count == 1
 
 
 @respx.mock

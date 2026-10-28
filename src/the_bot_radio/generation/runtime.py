@@ -356,6 +356,7 @@ class RunRecorder(AbstractAsyncContextManager["RunRecorder"]):
                 self.local_run_dir / name
                 for name in (
                     "proposal.json",
+                    "publication.json",
                     "search_results.json",
                     f"{self.run_date.isoformat()}.json",
                 )

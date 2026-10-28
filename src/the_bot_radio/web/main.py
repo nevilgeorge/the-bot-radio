@@ -222,7 +222,7 @@ def create_app(
     storage_config: GenerationStorageConfig | None = None,
     *,
     client_factory: Callable[[], S3SDKClient] = create_s3_client,
-    refresh_interval: float = 300,
+    refresh_interval: float = 60,
 ) -> FastAPI:
     """Resolve configuration at startup and own all background work and SDK resources."""
     if refresh_interval <= 0:

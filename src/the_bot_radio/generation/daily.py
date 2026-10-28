@@ -1,4 +1,4 @@
-"""Generate a pending daily record through injected storage interfaces.
+"""Generate and publish a daily record through injected storage interfaces.
 
 Each invocation retains evidence beneath the supplied local work root and
 checkpoints snapshots through the supplied artifact store. Canonical
@@ -19,6 +19,7 @@ from pathlib import Path
 from the_bot_radio.generation.agent import PlaylistAgent
 from the_bot_radio.generation.config import GenerationStorageConfig, generation_stores
 from the_bot_radio.generation.preparation import PreparedRun, prepare_run
+from the_bot_radio.generation.publication import publish_playlist
 from the_bot_radio.generation.runtime import (
     AgentLimits,
     RunRecorder,
@@ -86,11 +87,12 @@ async def generate_day(
     committed = False
     started = False
     status = "failed"
+    # Collect run metadata for final diagnostics, transcript events, and recovery error notes.
     outcome: dict[str, object] = {}
     primary_error: BaseException | None = None
     phase = "initialization"
 
-    async def reconcile(content: bytes) -> bool:
+    async def reconcile_ambiguous_write(content: bytes) -> bool:
         """Check an ambiguous write once without retrying canonical replacement."""
         try:
             async with asyncio.timeout(5):
@@ -146,6 +148,15 @@ async def generate_day(
                 model,
                 prepared.generated_at,
             )
+            write_json_atomic(
+                local_run_dir / "search_results.json", prepared.context.search_results
+            )
+            phase = "publication"
+            record = await publish_playlist(record, spotify_service, recorder)
+            outcome.update(
+                spotify_playlist_id=record.spotify_playlist_id,
+                spotify_playlist_url=record.spotify_playlist_url,
+            )
             content = (record.model_dump_json(indent=2) + "\n").encode("utf-8")
             write_json_atomic(
                 local_run_dir / "search_results.json", prepared.context.search_results
@@ -160,7 +171,7 @@ async def generate_day(
                 location = await daily_store.write(run_date, content)
             except BaseException as error:
                 # Even cancellation can arrive after a write became visible.
-                reconciliation_task = asyncio.create_task(reconcile(content))
+                reconciliation_task = asyncio.create_task(reconcile_ambiguous_write(content))
                 cancellation_error: asyncio.CancelledError | None = None
                 while True:
                     try:
@@ -237,6 +248,8 @@ async def generate_day(
                     primary_error.add_note(f"Run cleanup failed: {type(error).__name__}")
     if primary_error is not None:
         context = f"Run recovery: run_id={run_id}; staging_directory={local_run_dir}"
+        if outcome.get("spotify_playlist_url"):
+            context += f"; retained_spotify_playlist={outcome['spotify_playlist_url']}"
         if committed:
             context += f"; committed_location={location}"
         if "reconciliation" in outcome:
@@ -264,7 +277,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Replace a pending daily file and print its location, returning nonzero on failure."""
+    """Publish a daily playlist and print its location, returning nonzero on failure."""
     arguments = parse_args(argv)
     try:
         now = datetime.now(TZ)
@@ -296,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         for note in getattr(error, "__notes__", ()):
-            if note.startswith("Run recovery:"):
+            if note.startswith(("Run recovery:", "Retained Spotify playlist:")):
                 print(redact_secrets(note), file=sys.stderr)
         return 1
     print(path)

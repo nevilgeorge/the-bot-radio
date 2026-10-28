@@ -131,11 +131,12 @@ def test_sdk_configuration_uses_normal_resolution(monkeypatch):
     assert sdk_config.read_timeout == 2
 
 
-def test_cli_passes_s3_stores_and_prints_uri(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("prefix", ["trial", "development", "/production/", "production/nested"])
+def test_cli_passes_s3_stores_and_prints_uri(tmp_path, monkeypatch, capsys, prefix):
     client = Mock()
     monkeypatch.setattr(config, "create_s3_client", Mock(return_value=client))
     monkeypatch.setenv("BOT_RADIO_S3_BUCKET", "example-bucket")
-    monkeypatch.setenv("BOT_RADIO_S3_PREFIX", "trial")
+    monkeypatch.setenv("BOT_RADIO_S3_PREFIX", prefix)
     monkeypatch.setenv("BOT_RADIO_RUN_DIR", str(tmp_path / "retained"))
     generation = AsyncMock(return_value="s3://example-bucket/trial/days/2026-10-27.json")
     monkeypatch.setattr(daily, "generate_day", generation)
@@ -146,6 +147,7 @@ def test_cli_passes_s3_stores_and_prints_uri(tmp_path, monkeypatch, capsys):
     assert options["artifact_store"].client is client
     assert options["local_work_root"] == tmp_path / "retained"
     assert options["resources_dir"] == daily.RESOURCE_DIR
+    assert "playlist_public" not in options
     client.close.assert_called_once()
     assert capsys.readouterr().out == "s3://example-bucket/trial/days/2026-10-27.json\n"
 

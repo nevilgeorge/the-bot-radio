@@ -5,7 +5,7 @@ one bot DJ reads Greenpoint (weather, the G train, the tide, Citi Bikes, yesterd
 and drops one Spotify playlist, with liner notes explaining every pick.
 
 This repo contains a FastAPI + Jinja2 website and a Claude Agent SDK harness that generates
-validated daily playlist JSON. Spotify playlist publishing is a separate step. The website
+validated daily playlist JSON and automatically publishes each accepted playlist to Spotify. The website
 serves published records and legacy fixtures from local files or an optional S3 memory cache;
 pending generations stay hidden.
 
@@ -63,11 +63,19 @@ five from the catalog and five verified discoveries outside it. Primary artists 
 and track IDs from explicitly published playlists in the preceding 30 days are excluded.
 Featured artists may recur. Legacy fixtures and pending generations do not count as history.
 
-The output is `data/days/YYYY-MM-DD.json` with `publication_status: "pending"` and a null
-Spotify playlist ID. **This command does not create a Spotify playlist.** Every invocation
-generates a fresh playlist and replaces that date’s daily file after validation and archival,
-including when the existing file is malformed. Generation, validation, or precommit archive
-failures preserve the previous daily bytes. There is no overwrite or skip flag.
+Every invocation creates a fresh Spotify playlist and writes `data/days/YYYY-MM-DD.json`
+with `publication_status: "published"`, its Spotify ID and canonical URL, the final snapshot ID,
+visibility, and a timezone-aware publication timestamp. The generated title contains 2–4 words
+and cannot copy a selected track title. Both the daily title and Spotify name are
+`YYYY-MM-DD — <generated title>`; historical titles are retained.
+
+Publication checkpoints validated evidence, creates a public playlist, checkpoints its identity,
+adds all ten tracks in order, and verifies its name, public visibility, and complete contents.
+All runs create public playlists, including development and local-file runs; delete test playlists
+manually when finished. The daily file is replaced only after publication, validation, and archival, including
+when the previous file is malformed. Generation, Spotify, verification, or precommit archive
+failures preserve previous daily bytes. There is no publication, overwrite, or skip flag.
+Existing pending files are not backfilled; the next generation creates a fresh publication.
 Run one generation job at a time; orchestration does not acquire a lock.
 
 To watch agent messages, tool activity, and run events as JSON lines in your terminal:
@@ -91,12 +99,14 @@ and uses the existing service model. The deadline covers the agent session, not 
 
 Each invocation, including failed runs, retains working files under
 `data/.run-staging/YYYY-MM-DD/<run-id>/` and checkpoints artifact snapshots to
-`data/runs/YYYY-MM-DD/<run-id>/`. Successful assembly and validation stage
-`YYYY-MM-DD.json` and checkpoint it before publishing identical bytes to `days/`; each run
+`data/runs/YYYY-MM-DD/<run-id>/`. Successful Spotify publication stages the validated
+`YYYY-MM-DD.json` and checkpoints it before writing identical bytes to `days/`; each run
 retains its own output when later invocations replace the daily file. Both directories are outside the website and ignored by Git. `proposal.json` stores a schema-valid final response from a successful SDK result,
 including proposals rejected by playlist rules; `transcript.jsonl`
 records the conversation, and `search_results.json` preserves Spotify verification evidence.
 `diagnostics.json` combines run status, raw input readings, mood usage, and failure details.
+`publication.json` records the requested name, description, visibility, track order, progress,
+and any known Spotify identity. These files retain partial publication metadata even on failure.
 The agent can read only `workspace/`, containing `context.json`, `catalog.jsonl`, `history/`,
 and `schemas/`. The selected persona is supplied in the prompt; the packaged `personas.json`
 stays at the source. The full layout and file lifecycle are documented in the module docstring of
@@ -116,8 +126,15 @@ configuration and supplies the packaged resources.
 Artifact failures after a confirmed commit leave the day accepted but make the command fail.
 Stderr reports the committed location and retained staging directory. Recover uploads with
 `generation.runtime.recover_run_artifacts(artifact_store, run_date, run_id, local_run_dir)`
-using that original identity; recovery archives available output without republishing the daily
-file or regenerating the day. No recovery CLI is provided.
+using that original identity; recovery uploads available artifacts without calling Spotify,
+republishing daily data, or regenerating the day. No recovery CLI is provided.
+
+A failed or cancelled publication can leave an orphan Spotify playlist. Any known ID and URL
+are retained in diagnostics and reported on failure; inspect these before generating again.
+Created playlists are retained without automatic deletion, resumption, or rollback. Ambiguous
+Spotify mutations are not retried after transport errors, malformed acknowledgements, or
+cancellation; explicit 401/429 handling remains. A lost create response may leave an unidentified
+playlist. Cover art and publication recovery are outside this version.
 
 The development `.env.example` selects `the-bot-radio-staging-data` with the `development`
 prefix. Copying it to `.env` makes the local website read `development/days/`, and local
@@ -145,7 +162,7 @@ canonical S3 URI. Catalog and persona inputs still come from `--data-dir`.
 The website uses the same bucket/prefix settings for optional S3 daily reads. It loads
 all daily descriptors at startup and downloads new or changed objects with at most four
 concurrent reads. Startup fails if listing or downloading fails; an empty prefix or only
-hidden/invalid records is a successful empty load. Refreshes run 300 seconds after the
+hidden/invalid records is a successful empty load. Refreshes run 60 seconds after the
 preceding attempt completes. Failed refreshes retain the entire last successful snapshot
 and log the failure and subsequent recovery. Invalid replacements are logged and hidden.
 Store methods and routes read memory without remote calls; `/healthz` keeps reporting
@@ -233,7 +250,7 @@ permissions described above. Do not reuse broad qualification credentials for th
 Run opt-in live provider qualification in temporary data without publishing to Spotify:
 
 ```bash
-RUN_LIVE=1 uv run pytest -s tests/generation/test_daily.py::test_live_generation_writes_only_a_pending_temporary_day
+RUN_LIVE=1 uv run pytest -s tests/generation/test_daily.py::test_live_generation_writes_a_temporary_day_with_mocked_publication
 ```
 
 ## Test and lint

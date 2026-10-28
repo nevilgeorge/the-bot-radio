@@ -123,6 +123,23 @@ initialization failure. To test the wrapper without AWS:
 uv run pytest tests/test_generate_remote.py -q
 ```
 
+## Spotify publication
+
+Each real generation publishes a fresh Spotify playlist automatically. The daily title and Spotify
+name use `YYYY-MM-DD — <generated title>`. The playlist is created publicly, populated with all
+ten ordered tracks, and read back to verify its name, public visibility, and ordered contents.
+All storage environments create public playlists, including local files and development;
+delete test playlists manually when finished. Completed records are published and visible on the
+website. S3 website snapshots refresh 60 seconds
+after each refresh attempt, so a successful generation may take several minutes to appear.
+
+Failures before daily commit preserve the previous daily bytes. A created playlist is retained
+on failure or cancellation; inspect the known ID and URL in `diagnostics.json`, `publication.json`,
+and the CLI recovery notes before generating again. There is no automatic deletion, resumption,
+or rollback of Spotify playlists. Ambiguous Spotify mutations are not retried; a lost create
+response can leave an unidentified orphan. Artifact recovery only uploads evidence and never
+calls Spotify or republishes the daily record. Existing pending files are not backfilled.
+
 ## Schedule, failures, and rollback
 
 The staged schedule is `cron(0 6 * * ? *)`, timezone `America/New_York`, with no flexible
