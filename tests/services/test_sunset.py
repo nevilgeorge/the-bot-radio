@@ -24,7 +24,7 @@ def _assert_close(ours: str, ref: str, minutes: int = 2) -> None:
 
 
 async def test_happy_path_no_http(make_ctx):
-    # The site fixture (data/days/2026-10-26.json) says 5:52 PM, but that is Oct 31's
+    # The site fixture (tests/fixtures/days/2026-10-26.json) says 5:52 PM, but that is Oct 31's
     # sunset; the true 2026-10-26 Greenpoint sunset is ~5:59 PM EDT (astral and
     # sunrise-sunset.org agree within a minute).
     with respx.mock() as router:  # no routes: any HTTP call would fail the test

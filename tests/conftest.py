@@ -15,9 +15,10 @@ REPO_DATA = Path(__file__).resolve().parents[1] / "data"
 
 @pytest.fixture
 def site_data_dir(tmp_path: Path) -> Path:
-    """A throwaway copy of the repo's data/ dir that tests may modify freely."""
+    """Copy site data and isolated daily fixtures into a throwaway directory."""
     dest = tmp_path / "data"
-    shutil.copytree(REPO_DATA, dest)
+    shutil.copytree(REPO_DATA, dest, ignore=shutil.ignore_patterns("days"))
+    shutil.copytree(Path(__file__).parent / "fixtures/days", dest / "days")
     return dest
 
 

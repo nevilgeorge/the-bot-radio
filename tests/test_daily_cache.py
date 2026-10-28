@@ -31,7 +31,7 @@ def descriptor(run_date: date = RUN_DATE, etag: str = "first") -> DailyObjectDes
 
 def payload(run_date: date = RUN_DATE, **changes: Any) -> bytes:
     """Use the existing website fixture schema with requested publication fields."""
-    fixture_path = Path(__file__).parents[1] / "data/days/2026-10-15.json"
+    fixture_path = Path(__file__).parent / "fixtures/days/2026-10-15.json"
     record = json.loads(fixture_path.read_bytes())
     record.update(date=run_date.isoformat(), **changes)
     return json.dumps(record).encode()
