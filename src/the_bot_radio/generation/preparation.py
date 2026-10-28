@@ -152,10 +152,6 @@ async def prepare_run(
     diagnostics_sink: DiagnosticsSink | None = None,
 ) -> PreparedRun:
     """Freeze inputs, roll the DJ from published history, and compute the fixed mood."""
-    if daily_store is None:
-        raise ValueError("daily_store must not be None")
-    if resources_dir is None:
-        raise ValueError("resources_dir must not be None")
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("run timestamp must be timezone-aware")
     now = now.astimezone(TZ)

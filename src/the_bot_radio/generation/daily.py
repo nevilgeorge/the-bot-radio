@@ -65,6 +65,7 @@ async def generate_day(
     playlist_agent: PlaylistAgent | None = None,
 ) -> str:
     """Audit one invocation, checkpoint evidence, and create a canonical day once."""
+    # Assert required dependencies are non-null
     for dependency_name, dependency in (
         ("daily_store", daily_store),
         ("artifact_store", artifact_store),
@@ -73,6 +74,7 @@ async def generate_day(
     ):
         if dependency is None:
             raise ValueError(f"{dependency_name} is required and must not be None")
+
     now = now or datetime.now(TZ)
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("run timestamp must be timezone-aware")
