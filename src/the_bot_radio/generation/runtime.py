@@ -353,7 +353,12 @@ class RunRecorder(AbstractAsyncContextManager["RunRecorder"]):
         paths = [self.local_run_dir / name for name in ("diagnostics.json", "transcript.jsonl")]
         if full:
             paths.extend(
-                self.local_run_dir / name for name in ("proposal.json", "search_results.json")
+                self.local_run_dir / name
+                for name in (
+                    "proposal.json",
+                    "search_results.json",
+                    f"{self.run_date.isoformat()}.json",
+                )
             )
             workspace = self.local_run_dir / "workspace"
             if workspace.is_symlink():

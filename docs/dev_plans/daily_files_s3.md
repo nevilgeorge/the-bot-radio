@@ -1,7 +1,7 @@
 # Daily files in S3
 
 Use S3 for durable daily records and run artifacts. Keep the agent workspace local.
-Every invocation gets a fresh run prefix, including skipped and failed runs. Assume
+Every invocation generates a fresh playlist and gets a fresh run prefix, including failed runs. Assume
 one generation job at a time: remove `fcntl` locking and add no distributed lock.
 
 ## Layout and configuration
@@ -14,6 +14,7 @@ s3://<bucket>/<prefix>/
     transcript.jsonl
     proposal.json
     search_results.json
+    YYYY-MM-DD.json  # assembled, validated output; identical to committed daily bytes
     workspace/
       catalog.jsonl
       history/YYYY-MM-DD.json
@@ -51,8 +52,8 @@ class DailyRecordStore(Protocol):
         """Read a day; return None only when it does not exist."""
         ...
 
-    async def create(self, run_date: date, content: bytes) -> str:
-        """Create without replacement; return its location or raise RecordExists."""
+    async def write(self, run_date: date, content: bytes) -> str:
+        """Create or replace a daily record and return its location."""
         ...
 
 
@@ -71,14 +72,14 @@ class RunArtifactStore(Protocol):
 | Operation | Local implementation | S3 implementation |
 | --- | --- | --- |
 | Read day | Read `days/<date>.json` | `GetObject` |
-| Create day | Atomic creation without replacement | Conditional `PutObject` |
+| Write day | Atomic file replacement | Unconditional `PutObject` |
 | Write artifact | Atomic file replacement | `PutObject` |
 | Returned location | Absolute file path | `s3://bucket/prefix/key` |
 
 Select `LocalDailyRecordStore` / `LocalRunArtifactStore` or their S3 counterparts once
 at startup based on `BOT_RADIO_S3_BUCKET`. Inject them into generation and preparation;
-use in-memory implementations in tests. Storage failures raise; `RecordExists` explicitly
-identifies a create conflict. Validate artifact names as relative paths within the run.
+use in-memory implementations in tests. Storage failures raise. Validate artifact names
+as relative paths within the run.
 
 Keep the agent workspace as a local `Path`. A `RunRecorder` owns local diagnostics and
 transcript files and checkpoints their bytes through `RunArtifactStore`. It handles
@@ -86,9 +87,9 @@ redaction, checkpoint timing, upload ordering, retries, and final flushing. Stor
 adapters only handle persistence. Add listing as a separate capability for the website;
 generation needs only date-based reads.
 
-**Daily repository:** read bytes by date and create records without replacement.
+**Daily repository:** read bytes by date and write records with replacement.
 Return a URI or location type for S3 output, never an S3 URI wrapped in `Path`.
-Use it for same-day checks and the preceding 30 historical keys, fetched with bounded
+Use it for the preceding 30 historical keys, fetched with bounded
 concurrency and returned chronologically. Preserve published-only history, schema/date
 validation, and missing/excluded coverage. Only confirmed object absence counts as missing;
 permissions, network failures, and malformed published records fail setup.
@@ -99,9 +100,9 @@ Reuse the parsed model for track exclusions and DJ selection. This avoids serial
 the model back to JSON while preserving the original validated file; deserialization
 and validation are still required. Apply this behavior to both local and S3 storage.
 
-Create canonical records with `PutObject(IfNoneMatch="*")`. On a precondition failure,
-read and validate the existing record. Reconcile ambiguous upload outcomes by reading
-and comparing the destination with the intended record; never retry unconditionally.
+Replace canonical records with one unconditional `PutObject`, or an atomic local replacement.
+Drain writes before propagating cancellation. Reconcile ambiguous upload outcomes by reading
+and comparing the destination with the intended record; do not retry an ambiguous commit.
 
 **Artifact writer:** keep local atomic JSON writes and redacted transcript appends,
 then upload snapshots. Upload diagnostics on changes and transcripts every 15 seconds
@@ -121,14 +122,14 @@ The agent receives no S3 tools or credentials and retains its workspace access b
    and canonical daily location.
 2. Upload initial artifacts before paid setup. If S3 is unavailable, stop and report
    local artifacts; a remote prefix cannot be guaranteed during an outage.
-3. Read the canonical daily record. A valid record produces `status: skipped` with
-   `reason: existing_daily_record`; flush artifacts and return success. An invalid record
-   fails without replacement. A missing record proceeds.
+3. Proceed with fresh generation regardless of whether the current daily record exists
+   or is malformed. Preserve its bytes until the fresh output is ready to commit.
 4. Load history, build the local workspace, collect readings, score mood, and run one
    agent task with the existing validator. Checkpoint artifacts throughout.
-5. Save the proposal and search evidence, then upload available artifacts and workspace.
-   Assemble and validate the final daily record at the host boundary and conditionally
-   save it with `publication_status: pending`.
+5. Save the proposal and search evidence. Assemble and validate the final daily record
+   at the host boundary with `publication_status: pending`. Stage its serialized bytes
+   as `YYYY-MM-DD.json`, then checkpoint all available artifacts and workspace before
+   publishing those same bytes to the daily location.
 6. Mark diagnostics `accepted`, append the terminal event, and flush. Print the canonical
    S3 URI, or the local path in local mode. Record the committed ETag when available.
 
@@ -139,10 +140,13 @@ there is no transaction across the daily record and artifacts.
 
 - Before commit, exhausted artifact-upload retries prevent acceptance. Retain local files.
 - After commit, a final upload failure returns nonzero and reports both the committed URI
-  and local artifacts. Recover with upload-only retries; do not regenerate the day.
-- A rerun creates its own prefix and records a skip; it does not repair earlier runs.
+  and local artifacts. Recover with upload-only retries; do not regenerate or republish the day.
+- A rerun creates fresh output in its own prefix and replaces the daily file after validation
+  and archival. It does not repair earlier runs. No overwrite or skip flag is provided.
+- Recovery uploads available output under its original run identity without republishing
+  daily bytes. The last successful commit wins under the one-job-at-a-time assumption.
 - Preserve the primary exception if failure-path uploads also fail; report both safely.
-- Use one finalization path for skips, setup errors, agent errors, cancellation, and commit
+- Use one finalization path for setup errors, agent errors, cancellation, and commit
   failures, with bounded upload cleanup time.
 - Hard termination may lose events since the last checkpoint. Diagnostics left `running`
   indicate an unfinished run, not acceptance. Ephemeral staging may disappear with the worker.
@@ -190,7 +194,7 @@ changes remain outside these phases.
 status: complete
 
 Define the protocols, location/error contracts, and local implementations in
-`generation/storage.py`. Test missing vs. failed reads, atomic no-overwrite creation,
+`generation/storage.py`. Test missing vs. failed reads, atomic daily replacement,
 artifact replacement, and path containment. Agree on these APIs before parallel work.
 
 ### 2. History reads
@@ -216,10 +220,10 @@ partial workspace archival, cancellation, and upload failures independently of g
 status: complete
 
 After phases 2 and 3, wire both stores and the recorder into `daily.py`. Create runs before
-existence checks, remove locking, and preserve validation and no-overwrite semantics.
-Handle skipped runs, create conflicts, ambiguous commits, and post-commit artifact failures.
+setup, remove locking, and preserve validation before unconditional daily replacement.
+Handle ambiguous commits and pre/post-commit artifact failures.
 Print locations without assuming `Path`; update callers and tests accordingly. Verify two
-sequential invocations create distinct run folders while only one calls the agent.
+sequential invocations call the agent and retain distinct outputs in their own run folders.
 
 This is the first milestone: local generation works end to end through injected stores,
 including an in-memory store that proves generation no longer depends on daily file paths.
@@ -230,11 +234,11 @@ status: complete
 
 Implement the same protocols in a separate S3 module with an injected SDK client.
 Add bucket/prefix configuration and select adapters at startup. Test key construction,
-missing vs. service errors, conditional writes, ambiguous outcomes, and nonblocking SDK
+missing vs. service errors, unconditional writes, ambiguous outcomes, and nonblocking SDK
 calls using stubs. Keep local mode as the default. No live bucket is needed for this phase.
 
 The injected S3 adapters, shared configuration,
-conditional canonical creation, commit reconciliation, recorder recovery, and drained
+canonical replacement, commit reconciliation, recorder recovery, and drained
 worker/client ownership are implemented. Offline SDK tests use Stubber with explicit dummy
 credentials and region. The full offline suite and Ruff checks below include Phase 5.
 
@@ -339,7 +343,8 @@ not changed by qualification.
 Reuse deterministic catalog, personas, readings, mood, and playlist-agent fixtures. Exercise
 real S3 adapters through generation, proving exact committed bytes, validated published history
 copied unchanged into the workspace and artifacts, pending-history exclusion, accepted output,
-audited skip on rerun, and distinct run prefixes without another agent/provider call.
+fresh generation on rerun, daily replacement, and distinct run prefixes retaining each
+run’s exact output bytes.
 
 Exercise the real cache and application locally against that namespace. Pending records remain
 hidden. Replace a test record with a published fixture, explicitly refresh, and verify routes
@@ -352,7 +357,7 @@ Make no live Anthropic, Spotify, or neighborhood-input calls.
 
 Website credentials require `s3:GetObject` on `<prefix>/days/*` and `s3:ListBucket` constrained
 with `s3:prefix` to `<prefix>/days/`. Website credentials must have no artifact access or writes.
-Generation separately requires daily reads/conditional writes and artifact writes, with listing
+Generation separately requires daily reads/writes and artifact writes, with listing
 access needed to distinguish missing from denied daily objects. Qualification requires daily
 and artifact read/write access and necessary listing only inside its unique namespace; no
 deletion is needed. These are documented permissions, not IAM provisioning by these phases.
@@ -365,6 +370,10 @@ conventions, and deployment guidance cover optional S3 reads, startup failure, s
 local static inputs, and retained qualification data.
 
 #### Qualification evidence — 2026-10-28
+
+This historical qualification predates unconditional regeneration and per-run final JSON
+archives. Its rerun scenario qualified the former skip behavior; replacement semantics
+require separate qualification. The retained evidence below is unchanged.
 
 - Revision: `9e30732f4d582e65088ebd4b0a9fc10bf680c85b` plus the uncommitted Phase 5–7
   implementation in this working tree (no commit was created by qualification).

@@ -362,7 +362,7 @@ class MemoryDailyStore:
         finally:
             self.active_reads -= 1
 
-    async def create(self, run_date: date, content: bytes) -> str:
+    async def write(self, run_date: date, content: bytes) -> str:
         """Reject writes because history preparation is read-only."""
         raise AssertionError("preparation must not write daily records")
 

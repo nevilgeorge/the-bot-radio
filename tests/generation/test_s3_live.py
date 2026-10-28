@@ -20,6 +20,7 @@ from test_daily import NOW, RUN_DATE, staged_diagnostics
 from test_daily import generation_services as generation_services
 from test_preparation import published_record
 
+from the_bot_radio.generation.agent import PlaylistAgentResult
 from the_bot_radio.generation.config import GenerationStorageConfig, create_s3_client
 from the_bot_radio.generation.daily import generate_day
 from the_bot_radio.generation.models import DailyRecord
@@ -127,10 +128,10 @@ async def generate_in_staging(
     )
 
 
-async def test_s3_live_generation_history_and_audited_skip(
+async def test_s3_live_generation_history_and_archived_replacements(
     generation_services: SimpleNamespace, qualification_storage: QualificationStorage
 ) -> None:
-    """Qualify canonical bytes, original history evidence, and a provider-free rerun."""
+    """Qualify replacement bytes and retained evidence for each generated playlist."""
     services = generation_services
     storage = qualification_storage
     published_date = RUN_DATE - timedelta(days=2)
@@ -164,33 +165,46 @@ async def test_s3_live_generation_history_and_audited_skip(
     )
     assert retained_history == history_content
 
-    provider_calls = (
+    assert (
+        await storage.read_artifact(f"runs/{RUN_DATE}/{accepted_outcome['run_id']}/{RUN_DATE}.json")
+        == committed_content
+    )
+
+    async def regenerate(**kwargs: Any) -> PlaylistAgentResult:
+        """Produce distinct validated output for the next retained run."""
+        result = await services.run_agent(**kwargs)
+        proposal = result.proposal.model_copy(update={"title": "A fresh rainy playlist"})
+        kwargs["proposal_sink"](proposal)
+        return PlaylistAgentResult(proposal=proposal, prompt=result.prompt)
+
+    services.agent.run.side_effect = regenerate
+    assert await generate_in_staging(services, storage) == location
+    replacement_content = await storage.daily.read(RUN_DATE)
+    assert replacement_content is not None
+    assert replacement_content != committed_content
+    assert DailyRecord.model_validate_json(replacement_content).title == "A fresh rainy playlist"
+    assert (
         services.agent.run.await_count,
         services.claude.score_mood.await_count,
         services.spotify.search_tracks.await_count,
-    )
-    assert await generate_in_staging(services, storage) == location
-    assert await storage.daily.read(RUN_DATE) == committed_content
-    assert (
-        provider_calls
-        == (
-            services.agent.run.await_count,
-            services.claude.score_mood.await_count,
-            services.spotify.search_tracks.await_count,
-        )
-        == (1, 1, 1)
-    )
+    ) == (2, 2, 2)
     diagnostics_paths = sorted(accepted_directory.parent.glob("*/diagnostics.json"))
     outcomes = [json.loads(path.read_bytes()) for path in diagnostics_paths]
-    assert {outcome["status"] for outcome in outcomes} == {"accepted", "skipped"}
+    assert {outcome["status"] for outcome in outcomes} == {"accepted"}
     assert len({outcome["run_id"] for outcome in outcomes}) == 2
     for path, outcome in zip(diagnostics_paths, outcomes, strict=True):
         remote_content = await storage.read_artifact(
             f"runs/{RUN_DATE}/{outcome['run_id']}/diagnostics.json"
         )
         assert remote_content == path.read_bytes()
-    skipped = next(outcome for outcome in outcomes if outcome["status"] == "skipped")
-    assert skipped["reason"] == "existing_daily_record"
+        assert (
+            await storage.read_artifact(f"runs/{RUN_DATE}/{outcome['run_id']}/{RUN_DATE}.json")
+            == (path.parent / f"{RUN_DATE}.json").read_bytes()
+        )
+    assert {(path.parent / f"{RUN_DATE}.json").read_bytes() for path in diagnostics_paths} == {
+        committed_content,
+        replacement_content,
+    }
     assert not (services.data_dir / "days").exists()
 
     application = create_app(
@@ -209,7 +223,7 @@ async def test_s3_live_generation_history_and_audited_skip(
             assert (await web_client.get(f"/index/{RUN_DATE}")).status_code == 404
             assert (await web_client.get(f"/index/{pending_date}")).status_code == 404
             # Fixture replacement only: this does not implement a publisher.
-            published_payload = json.loads(committed_content)
+            published_payload = json.loads(replacement_content)
             published_payload.update(publication_status="published", spotify_playlist_id="p" * 22)
             await storage.put_day(RUN_DATE, json.dumps(published_payload).encode())
             await application.state.daily_cache.refresh()
@@ -219,7 +233,7 @@ async def test_s3_live_generation_history_and_audited_skip(
             }
             day_response = await web_client.get(f"/index/{RUN_DATE}")
             assert day_response.status_code == 200
-            assert record.title in day_response.text
+            assert "A fresh rainy playlist" in day_response.text
             assert (await web_client.get("/")).status_code == 200
 
 
@@ -232,10 +246,10 @@ class FailingArtifactStore:
         self.fail_at = fail_at
 
     async def write(self, run_date: date, run_id: str, relative_name: str, content: bytes) -> str:
-        """Reject proposal or accepted diagnostics uploads without mutating canonical data."""
+        """Reject final output or accepted diagnostics uploads without mutating canonical data."""
         if (
             self.fail_at == "precommit"
-            and relative_name == "proposal.json"
+            and relative_name == f"{run_date.isoformat()}.json"
             or self.fail_at == "postcommit"
             and relative_name == "diagnostics.json"
             and json.loads(content).get("status") == "accepted"
@@ -255,6 +269,8 @@ async def test_s3_live_artifact_recovery_preserves_original_identity(
     services = generation_services
     storage = qualification_storage
     monkeypatch.setattr(RunRecorder, "retry_delay", 0)
+    previous_content = b"previous daily record"
+    await storage.put_day(RUN_DATE, previous_content)
     with pytest.raises(ExceptionGroup):
         await generate_in_staging(
             services,
@@ -263,7 +279,7 @@ async def test_s3_live_artifact_recovery_preserves_original_identity(
         )
     staging_directory, outcome = staged_diagnostics(services)
     committed_content = await storage.daily.read(RUN_DATE)
-    assert (committed_content is not None) is (fail_at == "postcommit")
+    assert (committed_content != previous_content) is (fail_at == "postcommit")
     assert outcome["status"] == ("accepted" if fail_at == "postcommit" else "failed")
     original_run_id = outcome["run_id"]
     provider_calls = (
@@ -273,7 +289,12 @@ async def test_s3_live_artifact_recovery_preserves_original_identity(
     )
     await recover_run_artifacts(storage.artifacts, RUN_DATE, original_run_id, staging_directory)
     assert await storage.daily.read(RUN_DATE) == committed_content
-    for relative_name in ("diagnostics.json", "transcript.jsonl", "proposal.json"):
+    for relative_name in (
+        "diagnostics.json",
+        "transcript.jsonl",
+        "proposal.json",
+        f"{RUN_DATE}.json",
+    ):
         assert (
             await storage.read_artifact(f"runs/{RUN_DATE}/{original_run_id}/{relative_name}")
             == (staging_directory / relative_name).read_bytes()

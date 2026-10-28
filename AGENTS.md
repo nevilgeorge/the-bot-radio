@@ -8,7 +8,7 @@
 
 - All dates/times are America/New_York (`web/config.py` `TZ`). Pass timezone-aware datetimes; in input services use `ctx.run_date` / `ctx.now`, never `date.today()` / `datetime.now()`.
 - Async tests use anyio (not pytest-asyncio) and mock HTTP with respx. Each test module must set `pytestmark = pytest.mark.anyio` itself — a `pytestmark` in conftest.py does not apply.
-- The site and generation pipeline share one JSON contract, with website schema in `src/the_bot_radio/web/models.py`. Local mode uses `data/days/YYYY-MM-DD.json`; S3 mode uses `<prefix>/days/YYYY-MM-DD.json`. The newest visible record is the Today page; local files hot reload, S3 snapshots refresh periodically, and invalid records are logged and skipped.
+- The site and generation pipeline share one JSON contract, with website schema in `src/the_bot_radio/web/models.py`. Local mode uses `data/days/YYYY-MM-DD.json`; S3 mode uses `<prefix>/days/YYYY-MM-DD.json`. Each generation invocation replaces its date’s daily record only after validation and archiving identical bytes at `runs/YYYY-MM-DD/<run-id>/YYYY-MM-DD.json`. The newest visible record is the Today page; local files hot reload, S3 snapshots refresh periodically, and invalid records are logged and skipped.
 - Optional S3 consumers use the same bucket/prefix and SDK configuration as generation. Website lifespan owns one client and a memory cache refreshed 300 seconds after each attempt; startup fails on infrastructure errors, subsequent failures retain the entire snapshot. Store methods never perform remote I/O. Personas and the shared catalog ship in `src/the_bot_radio/resources/`; input descriptions remain in local `data/`. Tests must inject explicit local configuration or fake S3 dependencies, never ambient AWS settings.
 - Weekday/date labels are always derived from dates (`web/view_helpers.py`), never hard-coded in templates or data.
 - Page CSS lives in the single `static/css/site.css` (tokens on `:root`, dark only). Templates use Jinja macros from `templates/partials/`; derived values come from `view_helpers` (exposed to templates as `h`).
@@ -16,7 +16,7 @@
 ## LLM requests
 
 - Standalone Anthropic requests, including mood scoring, live in `src/the_bot_radio/services/claude_service.py` (`ClaudeService`). Playlist Agent SDK orchestration and its system prompt live in `src/the_bot_radio/generation/agent.py` (`PlaylistAgent`). Credentials come from `ANTHROPIC_API_KEY` (or an `ant auth login` profile).
-- Run one playlist agent task per day. The agent may validate and revise through tools during that task; invalid final output fails without a host repair prompt. The daily job assembles and validates the accepted proposal with trusted metadata before saving.
+- Run one playlist agent task per generation invocation. The agent may validate and revise through tools during that task; invalid final output fails without a host repair prompt. The daily job assembles and validates the accepted proposal with trusted metadata before saving.
 - `PlaylistValidator` in `generation/validation.py` binds a validation context to the private `_validate_playlist()` checks. Inject it into `PlaylistAgent` so tool feedback and final validation share the same evidence. `assemble_daily_record()` retains its mandatory host-side check.
 - Tests inject a fake Anthropic client into `ClaudeService(...)` or an `agent_client_factory` into `PlaylistAgent(...)`; respx can't intercept the Anthropic SDK's HTTP layer.
 

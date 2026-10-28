@@ -8,7 +8,6 @@ from typing import Protocol, TypedDict
 from botocore.exceptions import ClientError
 
 from the_bot_radio.generation.storage import (
-    RecordExists,
     run_in_thread,
     validate_artifact_name,
 )
@@ -46,9 +45,8 @@ class S3Client(Protocol):
         Key: str,
         Body: bytes,
         ContentType: str,
-        IfNoneMatch: str = ...,
     ) -> object:
-        """Write complete bytes, optionally conditional on absence."""
+        """Create or replace complete object bytes."""
         ...
 
     def close(self) -> None:
@@ -85,7 +83,7 @@ def normalize_s3_prefix(prefix: str) -> str:
 
 
 class S3DailyRecordStore:
-    """Read original daily bytes and create canonical records conditionally."""
+    """Read original daily bytes and replace canonical records unconditionally."""
 
     def __init__(self, client: S3Client, bucket: str, prefix: str = "") -> None:
         """Retain an injected client; ownership remains with its caller."""
@@ -119,27 +117,15 @@ class S3DailyRecordStore:
         finally:
             body.close()
 
-    async def create(self, run_date: date, content: bytes) -> str:
-        """Issue one conditional write and drain it before propagating cancellation."""
-        return await run_in_thread(self._create, run_date, content)
-
-    def _create(self, run_date: date, content: bytes) -> str:
-        """Map precondition failure; leave ambiguous outcomes to the daily job."""
-        try:
-            self.client.put_object(
-                Bucket=self.bucket,
-                Key=self._key(run_date),
-                Body=content,
-                ContentType="application/json",
-                IfNoneMatch="*",
-            )
-        except ClientError as error:
-            if (
-                error.response["Error"]["Code"] in {"PreconditionFailed", "412"}
-                or error.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 412
-            ):
-                raise RecordExists(self.storage_location(run_date)) from error
-            raise
+    async def write(self, run_date: date, content: bytes) -> str:
+        """Issue one replacement write and drain it before propagating cancellation."""
+        await run_in_thread(
+            self.client.put_object,
+            Bucket=self.bucket,
+            Key=self._key(run_date),
+            Body=content,
+            ContentType="application/json",
+        )
         return self.storage_location(run_date)
 
 

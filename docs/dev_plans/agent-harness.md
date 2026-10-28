@@ -171,7 +171,7 @@ recovery behavior remain to be specified.
 
 ## Implementation Details
 
-Use the Python `claude-agent-sdk` package to run one agent task per day. Keep SDK
+Use the Python `claude-agent-sdk` package to run one agent task per generation invocation. Keep SDK
 orchestration and the playlist system prompt in `generation/agent.py` (`PlaylistAgent`).
 `ClaudeService` owns standalone Anthropic requests such as mood scoring.
 
@@ -287,7 +287,8 @@ cost and turn count directly; streamed assistant message IDs are deduplicated pe
 for turn-limit enforcement. The agent may revise after tool feedback during its task, but
 the host never sends a repair prompt after final validation fails.
 Inputs and schemas are snapshotted under `data/runs/<date>/<run-id>/workspace/`; host-only `proposal.json`,
-`transcript.jsonl`, `diagnostics.json`, and `search_results.json` remain outside that readable
+`transcript.jsonl`, `diagnostics.json`, `search_results.json`, and validated final
+`<date>.json` remain outside that readable
 workspace. Diagnostics combines raw inputs, mood usage, and the run outcome. The workspace
 contains `catalog.jsonl`, `history/`, and `schemas/`; run context is supplied in the initial prompt.
 There is no setup directory

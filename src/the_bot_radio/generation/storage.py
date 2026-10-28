@@ -11,10 +11,6 @@ from pathlib import Path
 from typing import Protocol
 
 
-class RecordExists(FileExistsError):
-    """A canonical daily record already exists and cannot be replaced."""
-
-
 async def run_in_thread[T, **P](operation: Callable[P, T], *args: P.args, **kwargs: P.kwargs) -> T:
     """Drain a shielded worker before cancellation can release its caller."""
     worker_task = asyncio.create_task(asyncio.to_thread(operation, *args, **kwargs))
@@ -66,8 +62,8 @@ class DailyRecordStore(Protocol):
         """Read a day, returning None only for a missing record."""
         ...
 
-    async def create(self, run_date: date, content: bytes) -> str:
-        """Create without replacement; return its location or raise RecordExists."""
+    async def write(self, run_date: date, content: bytes) -> str:
+        """Create or replace a complete daily record and return its location."""
         ...
 
 
@@ -118,7 +114,7 @@ def _contained_path(root: Path, relative_path: Path) -> Path:
 
 
 class LocalDailyRecordStore:
-    """Read and atomically create daily files under a local data directory."""
+    """Read and atomically replace daily files under a local data directory."""
 
     def __init__(self, data_dir: Path) -> None:
         """Resolve the configured root once, independently of the working directory."""
@@ -140,17 +136,14 @@ class LocalDailyRecordStore:
         except FileNotFoundError:
             return None
 
-    async def create(self, run_date: date, content: bytes) -> str:
-        """Write a new canonical day without overwriting an existing file."""
-        return await asyncio.to_thread(self._create, run_date, content)
+    async def write(self, run_date: date, content: bytes) -> str:
+        """Atomically replace daily bytes and drain the worker before cancellation."""
+        return await run_in_thread(self._write, run_date, content)
 
-    def _create(self, run_date: date, content: bytes) -> str:
-        """Create the record atomically and normalize existing-file errors."""
+    def _write(self, run_date: date, content: bytes) -> str:
+        """Expose complete replacement bytes without removing the previous record first."""
         path = _contained_path(self.data_dir, Path("days") / f"{run_date.isoformat()}.json")
-        try:
-            atomic_write_bytes(path, content, replace=False)
-        except FileExistsError as error:
-            raise RecordExists(str(path)) from error
+        atomic_write_bytes(path, content, replace=True)
         return str(path)
 
 

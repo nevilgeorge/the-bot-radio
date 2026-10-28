@@ -15,7 +15,6 @@ from botocore.response import StreamingBody
 from botocore.stub import Stubber
 
 from the_bot_radio.generation.s3_storage import S3DailyRecordStore, S3RunArtifactStore
-from the_bot_radio.generation.storage import RecordExists
 
 pytestmark = pytest.mark.anyio
 RUN_DATE = date(2026, 10, 27)
@@ -140,24 +139,22 @@ async def test_body_failure_closes_stream_inside_worker() -> None:
     assert all(thread_id != event_loop_thread for thread_id in worker_threads)
 
 
-async def test_create_uses_one_conditional_put(sdk_client: Any) -> None:
-    """Canonical creation preserves exact bytes and delegates encryption to the bucket."""
-    content = b'{"accepted":true}\n'
+async def test_daily_write_creates_and_replaces_with_unconditional_put(sdk_client: Any) -> None:
+    """Daily writes preserve exact bytes and delegate encryption to the bucket."""
+    daily_store = S3DailyRecordStore(sdk_client, BUCKET, "/prefix/")
     with Stubber(sdk_client) as stubber:
-        stubber.add_response(
-            "put_object",
-            {},
-            {
-                "Bucket": BUCKET,
-                "Key": "prefix/" + DAY_KEY,
-                "Body": content,
-                "ContentType": "application/json",
-                "IfNoneMatch": "*",
-            },
-        )
-        assert await S3DailyRecordStore(sdk_client, BUCKET, "/prefix/").create(
-            RUN_DATE, content
-        ) == (f"s3://{BUCKET}/prefix/{DAY_KEY}")
+        for content in (b'{"accepted":true}\n', b'{"replacement":true}\n'):
+            stubber.add_response(
+                "put_object",
+                {},
+                {
+                    "Bucket": BUCKET,
+                    "Key": "prefix/" + DAY_KEY,
+                    "Body": content,
+                    "ContentType": "application/json",
+                },
+            )
+            assert await daily_store.write(RUN_DATE, content) == (f"s3://{BUCKET}/prefix/{DAY_KEY}")
         stubber.assert_no_pending_responses()
 
 
@@ -171,7 +168,7 @@ async def test_create_uses_one_conditional_put(sdk_client: Any) -> None:
         ("InternalError", 500),
     ],
 )
-async def test_create_maps_only_precondition_failure(
+async def test_daily_write_propagates_service_failure(
     sdk_client: Any, code: str, status: int
 ) -> None:
     """A conflict or ambiguous service failure reaches the host without adapter retry."""
@@ -185,12 +182,10 @@ async def test_create_maps_only_precondition_failure(
                 "Key": DAY_KEY,
                 "Body": b"content",
                 "ContentType": "application/json",
-                "IfNoneMatch": "*",
             },
         )
-        error_class = RecordExists if status == 412 else ClientError
-        with pytest.raises(error_class):
-            await S3DailyRecordStore(sdk_client, BUCKET).create(RUN_DATE, b"content")
+        with pytest.raises(ClientError):
+            await S3DailyRecordStore(sdk_client, BUCKET).write(RUN_DATE, b"content")
         stubber.assert_no_pending_responses()
 
 
@@ -259,7 +254,7 @@ async def test_artifact_rejects_unsafe_relative_names(name: str) -> None:
     assert sdk_client.mock_calls == []
 
 
-@pytest.mark.parametrize("operation", ["create", "write"])
+@pytest.mark.parametrize("operation", ["daily", "artifact"])
 @pytest.mark.parametrize("worker_fails", [False, True])
 async def test_cancelled_mutation_drains_worker_before_propagation(
     operation: str, worker_fails: bool
@@ -286,8 +281,8 @@ async def test_cancelled_mutation_drains_worker_before_propagation(
     daily_store = S3DailyRecordStore(sdk_client, BUCKET)
     artifact_store = S3RunArtifactStore(sdk_client, BUCKET)
     mutation = (
-        daily_store.create(RUN_DATE, b"old")
-        if operation == "create"
+        daily_store.write(RUN_DATE, b"old")
+        if operation == "daily"
         else artifact_store.write(RUN_DATE, "run", "diagnostics.json", b"old")
     )
     mutation_task = asyncio.create_task(mutation)

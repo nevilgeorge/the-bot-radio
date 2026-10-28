@@ -2,7 +2,7 @@
 
 Each invocation retains evidence beneath the supplied local work root and
 checkpoints snapshots through the supplied artifact store. Canonical
-records are created once through DailyRecordStore. Skips are audited too.
+records are replaced through DailyRecordStore after archiving validated output.
 One generation job at a time is assumed; no generation lock is used.
 Recover failed uploads with runtime.recover_run_artifacts using the original
 run identity and retained staging directory, without regenerating the day.
@@ -18,7 +18,6 @@ from pathlib import Path
 
 from the_bot_radio.generation.agent import PlaylistAgent
 from the_bot_radio.generation.config import GenerationStorageConfig, generation_stores
-from the_bot_radio.generation.models import DailyRecord
 from the_bot_radio.generation.preparation import PreparedRun, prepare_run
 from the_bot_radio.generation.runtime import (
     AgentLimits,
@@ -30,8 +29,8 @@ from the_bot_radio.generation.runtime import (
 )
 from the_bot_radio.generation.storage import (
     DailyRecordStore,
-    RecordExists,
     RunArtifactStore,
+    atomic_write_bytes,
 )
 from the_bot_radio.generation.validation import PlaylistValidator, assemble_daily_record
 from the_bot_radio.resources import RESOURCE_DIR
@@ -39,16 +38,6 @@ from the_bot_radio.services.claude_service import MODEL, ClaudeService
 from the_bot_radio.services.inputs.base import TZ, make_http_client
 from the_bot_radio.services.spotify_service import SpotifyService
 from the_bot_radio.web.config import DATA_DIR
-
-
-def validate_existing_record(content: bytes, run_date: date) -> None:
-    """Refuse malformed or misdated canonical data instead of replacing it."""
-    try:
-        record = DailyRecord.model_validate_json(content)
-        if record.date != run_date:
-            raise ValueError("record date differs from requested date")
-    except ValueError as error:
-        raise ValueError("existing daily file is invalid") from error
 
 
 async def generate_day(
@@ -67,7 +56,7 @@ async def generate_day(
     spotify_service: SpotifyService | None = None,
     playlist_agent: PlaylistAgent | None = None,
 ) -> str:
-    """Audit one invocation, checkpoint evidence, and create a canonical day once."""
+    """Generate fresh output, archive validated bytes, and replace the canonical day."""
     # Assert required dependencies are non-null
     for dependency_name, dependency in (
         ("daily_store", daily_store),
@@ -102,7 +91,7 @@ async def generate_day(
     phase = "initialization"
 
     async def reconcile(content: bytes) -> bool:
-        """Check an ambiguous write once without retrying canonical creation."""
+        """Check an ambiguous write once without retrying canonical replacement."""
         try:
             async with asyncio.timeout(5):
                 actual = await daily_store.read(run_date)
@@ -119,84 +108,74 @@ async def generate_day(
     try:
         await recorder.start(now=now, model=model, daily_file=location, run_id=run_id)
         started = True
-        phase = "check_existing"
-        existing = await daily_store.read(run_date)
-        if existing is not None:
-            validate_existing_record(existing, run_date)
-            status = "skipped"
-            outcome["reason"] = "existing_daily_record"
-        else:
-            phase = "preparation"
-            async with make_http_client() as http_client:
-                claude_service = claude_service or ClaudeService()
-                spotify_service = spotify_service or SpotifyService(http_client)
-                prepared = await prepare_run(
-                    local_run_dir,
-                    run_date,
-                    now,
-                    http_client,
-                    claude_service,
-                    resources_dir=resources_dir,
-                    daily_store=daily_store,
-                    diagnostics_sink=recorder.update_diagnostics,
-                )
-                recorder.append({"event": "prepared", "mood": prepared.context.mood})
-                await recorder.checkpoint()
-                playlist_agent = playlist_agent or PlaylistAgent(
-                    spotify_service, PlaylistValidator(prepared.context)
-                )
-                phase = "agent"
-                result = await playlist_agent.run(
-                    workspace=prepared.workspace,
-                    prompt=prepared.prompt,
-                    model=model,
-                    limits=limits,
-                    event_sink=recorder.append,
-                    proposal_sink=lambda proposal: write_json_atomic(
-                        local_run_dir / "proposal.json", proposal
-                    ),
-                )
-                phase = "validation"
-                record = assemble_daily_record(
-                    result.proposal,
-                    prepared.context,
-                    result.prompt,
-                    model,
-                    prepared.generated_at,
-                )
-                content = (record.model_dump_json(indent=2) + "\n").encode("utf-8")
-                write_json_atomic(
-                    local_run_dir / "search_results.json", prepared.context.search_results
-                )
-                await recorder.checkpoint()
-                phase = "commit"
-                try:
-                    location = await daily_store.create(run_date, content)
-                except RecordExists:
-                    existing = await daily_store.read(run_date)
-                    if existing is None:
-                        raise ValueError("daily record conflict destination is missing") from None
-                    validate_existing_record(existing, run_date)
-                    status = "skipped"
-                    outcome["reason"] = "daily_record_created_elsewhere"
-                except BaseException as error:
-                    # Even cancellation can arrive after a write became visible.
-                    reconciliation_task = asyncio.create_task(reconcile(content))
-                    cancellation_error: asyncio.CancelledError | None = None
-                    while True:
-                        try:
-                            committed = await asyncio.shield(reconciliation_task)
-                            break
-                        except asyncio.CancelledError as cancelled:
-                            cancellation_error = cancelled
-                    if cancellation_error is not None:
-                        raise cancellation_error from error
-                    if isinstance(error, asyncio.CancelledError) or not committed:
-                        raise
-                else:
-                    committed = True
-                if committed:
-                    status = "accepted"
+        phase = "preparation"
+        async with make_http_client() as http_client:
+            claude_service = claude_service or ClaudeService()
+            spotify_service = spotify_service or SpotifyService(http_client)
+            prepared = await prepare_run(
+                local_run_dir,
+                run_date,
+                now,
+                http_client,
+                claude_service,
+                resources_dir=resources_dir,
+                daily_store=daily_store,
+                diagnostics_sink=recorder.update_diagnostics,
+            )
+            recorder.append({"event": "prepared", "mood": prepared.context.mood})
+            await recorder.checkpoint()
+            playlist_agent = playlist_agent or PlaylistAgent(
+                spotify_service, PlaylistValidator(prepared.context)
+            )
+            phase = "agent"
+            result = await playlist_agent.run(
+                workspace=prepared.workspace,
+                prompt=prepared.prompt,
+                model=model,
+                limits=limits,
+                event_sink=recorder.append,
+                proposal_sink=lambda proposal: write_json_atomic(
+                    local_run_dir / "proposal.json", proposal
+                ),
+            )
+            phase = "validation"
+            record = assemble_daily_record(
+                result.proposal,
+                prepared.context,
+                result.prompt,
+                model,
+                prepared.generated_at,
+            )
+            content = (record.model_dump_json(indent=2) + "\n").encode("utf-8")
+            write_json_atomic(
+                local_run_dir / "search_results.json", prepared.context.search_results
+            )
+            atomic_write_bytes(
+                local_run_dir / f"{run_date.isoformat()}.json", content, replace=True
+            )
+            phase = "archive"
+            await recorder.checkpoint()
+            phase = "commit"
+            try:
+                location = await daily_store.write(run_date, content)
+            except BaseException as error:
+                # Even cancellation can arrive after a write became visible.
+                reconciliation_task = asyncio.create_task(reconcile(content))
+                cancellation_error: asyncio.CancelledError | None = None
+                while True:
+                    try:
+                        committed = await asyncio.shield(reconciliation_task)
+                        break
+                    except asyncio.CancelledError as cancelled:
+                        cancellation_error = cancelled
+                if cancellation_error is not None:
+                    raise cancellation_error from error
+                if isinstance(error, asyncio.CancelledError) or not committed:
+                    raise
+            else:
+                committed = True
+            if committed:
+                status = "accepted"
     except BaseException as error:
         primary_error = error
         outcome.update(error_details(error, phase))
@@ -230,7 +209,6 @@ async def generate_day(
             if primary_error is None:
                 primary_error = error
                 if not committed:
-                    # A skip whose audit cannot be persisted is a failed invocation.
                     # Keep the local snapshot recoverable even after finish closed.
                     try:
                         update_diagnostics(
@@ -286,7 +264,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Generate a pending daily file and print its location, returning nonzero on failure."""
+    """Replace a pending daily file and print its location, returning nonzero on failure."""
     arguments = parse_args(argv)
     try:
         now = datetime.now(TZ)

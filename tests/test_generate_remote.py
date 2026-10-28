@@ -95,6 +95,7 @@ def install_successful_aws(
     "arguments",
     [
         ["--help"],
+        ["--date", "2026-10-27"],
         [
             "--date",
             "2026-10-28",

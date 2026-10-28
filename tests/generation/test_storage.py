@@ -12,7 +12,6 @@ from the_bot_radio.generation import storage
 from the_bot_radio.generation.storage import (
     LocalDailyRecordStore,
     LocalRunArtifactStore,
-    RecordExists,
 )
 
 pytestmark = pytest.mark.anyio
@@ -29,17 +28,16 @@ def test_daily_storage_location_does_not_access_filesystem(
     assert daily_store.storage_location(RUN_DATE) == str(tmp_path / "missing/days/2026-10-27.json")
 
 
-async def test_daily_store_preserves_bytes_and_never_replaces(tmp_path: Path) -> None:
-    """Missing days are optional, but accepted bytes cannot be overwritten."""
+async def test_daily_store_creates_and_replaces_exact_bytes(tmp_path: Path) -> None:
+    """Missing days are optional, and writes replace previous bytes completely."""
     daily_store = LocalDailyRecordStore(tmp_path)
     assert await daily_store.read(RUN_DATE) is None
     original_content = b'{ "original": true }\n'
-    location = await daily_store.create(RUN_DATE, original_content)
+    location = await daily_store.write(RUN_DATE, original_content)
     assert location == str(tmp_path / "days/2026-10-27.json")
     assert await daily_store.read(RUN_DATE) == original_content
-    with pytest.raises(RecordExists):
-        await daily_store.create(RUN_DATE, b"replacement")
-    assert await daily_store.read(RUN_DATE) == original_content
+    assert await daily_store.write(RUN_DATE, b"replacement") == location
+    assert await daily_store.read(RUN_DATE) == b"replacement"
     assert sorted(path.name for path in (tmp_path / "days").iterdir()) == ["2026-10-27.json"]
 
 
@@ -52,14 +50,17 @@ async def test_daily_read_propagates_permission_failure(
         await LocalDailyRecordStore(tmp_path).read(RUN_DATE)
 
 
-async def test_failed_creation_removes_temporary_file(
+async def test_failed_daily_replacement_preserves_previous_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """An interrupted atomic creation exposes neither partial output nor scratch files."""
-    monkeypatch.setattr(storage.os, "link", Mock(side_effect=OSError("link failed")))
-    with pytest.raises(OSError, match="link failed"):
-        await LocalDailyRecordStore(tmp_path).create(RUN_DATE, b"content")
-    assert list((tmp_path / "days").iterdir()) == []
+    """A failed atomic replacement preserves complete previous bytes without scratch files."""
+    daily_store = LocalDailyRecordStore(tmp_path)
+    location = await daily_store.write(RUN_DATE, b"original")
+    monkeypatch.setattr(storage.os, "replace", Mock(side_effect=OSError("replace failed")))
+    with pytest.raises(OSError, match="replace failed"):
+        await daily_store.write(RUN_DATE, b"replacement")
+    assert Path(location).read_bytes() == b"original"
+    assert list((tmp_path / "days").iterdir()) == [Path(location)]
 
 
 async def test_artifact_snapshots_replace_only_their_run(tmp_path: Path) -> None:
@@ -101,7 +102,7 @@ async def test_stores_reject_symlink_escape(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="configured root|symlinks"):
         await LocalDailyRecordStore(root).read(RUN_DATE)
     with pytest.raises(ValueError, match="configured root|symlinks"):
-        await LocalDailyRecordStore(root).create(RUN_DATE, b"daily")
+        await LocalDailyRecordStore(root).write(RUN_DATE, b"daily")
     (root / "runs").symlink_to(outside, target_is_directory=True)
     with pytest.raises(ValueError, match="configured root|symlinks"):
         await LocalRunArtifactStore(root).write(RUN_DATE, "run", "file", b"artifact")
@@ -127,7 +128,7 @@ async def test_failed_flush_cleans_temporary_file(
     """Unflushed bytes never become a daily record or leave scratch files."""
     monkeypatch.setattr(storage.os, "fsync", Mock(side_effect=OSError("flush failed")))
     with pytest.raises(OSError, match="flush failed"):
-        await LocalDailyRecordStore(tmp_path).create(RUN_DATE, b"content")
+        await LocalDailyRecordStore(tmp_path).write(RUN_DATE, b"content")
     assert list((tmp_path / "days").iterdir()) == []
 
 
@@ -147,23 +148,22 @@ async def test_artifact_rejects_links_within_root(tmp_path: Path) -> None:
         await LocalRunArtifactStore(tmp_path).write(RUN_DATE, "alias", "file", b"content")
 
 
-async def test_concurrent_daily_creates_have_one_winner(tmp_path: Path) -> None:
-    """Atomic creation accepts exactly one complete payload from competing writers."""
+async def test_concurrent_daily_writes_expose_one_complete_payload(tmp_path: Path) -> None:
+    """Concurrent replacements all succeed and expose one complete payload."""
     daily_store = LocalDailyRecordStore(tmp_path)
     payloads = [f"payload-{index}".encode() for index in range(10)]
     results = await asyncio.gather(
-        *(daily_store.create(RUN_DATE, payload) for payload in payloads),
+        *(daily_store.write(RUN_DATE, payload) for payload in payloads),
         return_exceptions=True,
     )
-    winners = [index for index, result in enumerate(results) if isinstance(result, str)]
-    assert len(winners) == 1
-    assert all(isinstance(result, (str, RecordExists)) for result in results)
-    assert await daily_store.read(RUN_DATE) == payloads[winners[0]]
+    assert all(isinstance(result, str) for result in results)
+    assert await daily_store.read(RUN_DATE) in payloads
     assert len(list((tmp_path / "days").iterdir())) == 1
 
 
-async def test_cancelled_artifact_write_joins_filesystem_worker(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("operation", ["daily", "artifact"])
+async def test_cancelled_write_joins_filesystem_worker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
     """Cancellation cannot leave an old filesystem replacement racing a newer write."""
     started = Event()
@@ -178,9 +178,13 @@ async def test_cancelled_artifact_write_joins_filesystem_worker(
 
     monkeypatch.setattr(storage, "atomic_write_bytes", delayed_write)
     artifact_store = LocalRunArtifactStore(tmp_path)
-    write_task = asyncio.create_task(
-        artifact_store.write(RUN_DATE, "run", "diagnostics.json", b"old")
+    daily_store = LocalDailyRecordStore(tmp_path)
+    mutation = (
+        daily_store.write(RUN_DATE, b"old")
+        if operation == "daily"
+        else artifact_store.write(RUN_DATE, "run", "diagnostics.json", b"old")
     )
+    write_task = asyncio.create_task(mutation)
     try:
         assert await asyncio.to_thread(started.wait, 1)
         write_task.cancel()
@@ -193,5 +197,9 @@ async def test_cancelled_artifact_write_joins_filesystem_worker(
         release.set()
     with pytest.raises(asyncio.CancelledError):
         await write_task
-    location = await artifact_store.write(RUN_DATE, "run", "diagnostics.json", b"new")
+    location = (
+        await daily_store.write(RUN_DATE, b"new")
+        if operation == "daily"
+        else await artifact_store.write(RUN_DATE, "run", "diagnostics.json", b"new")
+    )
     assert Path(location).read_bytes() == b"new"

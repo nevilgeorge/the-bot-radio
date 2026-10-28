@@ -64,8 +64,10 @@ and track IDs from explicitly published playlists in the preceding 30 days are e
 Featured artists may recur. Legacy fixtures and pending generations do not count as history.
 
 The output is `data/days/YYYY-MM-DD.json` with `publication_status: "pending"` and a null
-Spotify playlist ID. **This command does not create a Spotify playlist.** Rerunning an accepted
-day records an audited skip; an invalid existing file is preserved and reported as an error.
+Spotify playlist ID. **This command does not create a Spotify playlist.** Every invocation
+generates a fresh playlist and replaces that date’s daily file after validation and archival,
+including when the existing file is malformed. Generation, validation, or precommit archive
+failures preserve the previous daily bytes. There is no overwrite or skip flag.
 Run one generation job at a time; orchestration does not acquire a lock.
 
 To watch agent messages, tool activity, and run events as JSON lines in your terminal:
@@ -87,9 +89,11 @@ invalid final output fails without a host repair prompt. Override with `--max-tu
 `--deadline-seconds`, and `--model`. Budget estimates can overshoot; mood scoring is separate
 and uses the existing service model. The deadline covers the agent session, not input setup.
 
-Each invocation, including skips, retains working files under
+Each invocation, including failed runs, retains working files under
 `data/.run-staging/YYYY-MM-DD/<run-id>/` and checkpoints artifact snapshots to
-`data/runs/YYYY-MM-DD/<run-id>/`. Both directories are outside the website and ignored by Git. `proposal.json` stores a schema-valid final response from a successful SDK result,
+`data/runs/YYYY-MM-DD/<run-id>/`. Successful assembly and validation stage
+`YYYY-MM-DD.json` and checkpoint it before publishing identical bytes to `days/`; each run
+retains its own output when later invocations replace the daily file. Both directories are outside the website and ignored by Git. `proposal.json` stores a schema-valid final response from a successful SDK result,
 including proposals rejected by playlist rules; `transcript.jsonl`
 records the conversation, and `search_results.json` preserves Spotify verification evidence.
 `diagnostics.json` combines run status, raw input readings, mood usage, and failure details.
@@ -102,7 +106,8 @@ is supplied in each agent workspace. `generation/agent.py` owns `PlaylistAgent` 
 prompt; `ClaudeService` handles standalone requests such as mood scoring. A `PlaylistValidator`
 binds the run context to the shared validation checks and is injected into the agent for tool
 feedback and final proposal validation. The agent returns a proposal and archived prompt. The daily job adds trusted metadata once, validates the
-assembled record, and creates it through the daily storage interface. `generate_day()` returns
+assembled record, archives its serialized bytes, and writes those same bytes through
+the daily storage interface. `generate_day()` returns
 its location string and requires explicit daily/artifact stores, a local work root,
 and a resource directory, with the run date as its first positional argument. The CLI
 selects the stores and default local work root from `--data-dir` and environment
@@ -111,7 +116,8 @@ configuration and supplies the packaged resources.
 Artifact failures after a confirmed commit leave the day accepted but make the command fail.
 Stderr reports the committed location and retained staging directory. Recover uploads with
 `generation.runtime.recover_run_artifacts(artifact_store, run_date, run_id, local_run_dir)`
-using that original identity; recovery does not regenerate the day. No recovery CLI is provided.
+using that original identity; recovery archives available output without republishing the daily
+file or regenerating the day. No recovery CLI is provided.
 
 Generation storage defaults to local files. To opt into the Terraform staging bucket,
 set these variables in your shell or uncomment the examples in `.env`:
@@ -148,8 +154,10 @@ resolution; local mode performs no AWS initialization. SDK retries are disabled
 canonical commits to orchestration reconciliation. Connection/read timeouts are one/two
 seconds. They limit network waits; Python cannot forcibly cancel worker threads.
 SDK operations drain before cancellation propagates so a cancelled snapshot cannot
-finish after a later retry. Daily creation uses a single conditional
-[`PutObject(IfNoneMatch="*")`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html).
+finish after a later retry. Daily replacement uses one unconditional `PutObject`; local
+replacement is atomic. An ambiguous commit is reconciled by comparing the stored bytes
+with the intended output. Under the one-job-at-a-time assumption, the last successful
+commit supplies the daily file.
 
 Generation permissions must allow `s3:GetObject` for daily records, `s3:PutObject`
 for daily records and artifacts, and `s3:ListBucket` on the bucket to distinguish
@@ -204,7 +212,8 @@ RUN_LIVE=1 uv run pytest -m s3_live -s
 An explicit bucket and existing authorized credentials are required. Each scenario creates
 `<configured-prefix>/qualification/<uuid>/`, prints its retained S3 location even on failure,
 and leaves all objects and versions intact. Tests cover exact generation/history bytes,
-audited rerun skips, cache publication transitions, and pre/postcommit artifact recovery.
+fresh rerun outputs and archives, cache publication transitions, and pre/postcommit
+artifact recovery.
 No deletion permissions are needed. The installed boto3 CRT extra supports existing
 `aws login` profiles. Qualification does not provision IAM, publish playlists, deploy the
 website, or alter production configuration. Evidence is in

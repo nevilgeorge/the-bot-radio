@@ -21,7 +21,6 @@ from the_bot_radio.generation.runtime import AgentLimits, RunRecorder, recover_r
 from the_bot_radio.generation.storage import (
     LocalDailyRecordStore,
     LocalRunArtifactStore,
-    RecordExists,
 )
 from the_bot_radio.generation.tools import PlaylistTools
 from the_bot_radio.generation.validation import PlaylistValidator, assemble_daily_record
@@ -183,6 +182,68 @@ async def generate(services: SimpleNamespace) -> Path:
     )
 
 
+@pytest.mark.parametrize("existing_kind", ["valid", "malformed"])
+async def test_regenerates_an_existing_day(
+    generation_services: SimpleNamespace, existing_kind: str
+) -> None:
+    """Every invocation regenerates even an invalid day and saves validated new bytes."""
+    services = generation_services
+    output_path = services.data_dir / "days" / f"{RUN_DATE}.json"
+    if existing_kind == "valid":
+        await generate(services)
+        previous_payload = json.loads(output_path.read_bytes())
+        previous_payload["title"] = "Earlier playlist"
+        previous_bytes = json.dumps(previous_payload).encode()
+    else:
+        output_path.parent.mkdir()
+        previous_bytes = b"malformed previous daily record"
+    output_path.write_bytes(previous_bytes)
+    services.agent.run.reset_mock()
+
+    assert await generate(services) == output_path
+
+    replacement = DailyRecord.model_validate_json(output_path.read_bytes())
+    assert replacement.title == "Rain on the avenue"
+    assert replacement.date == RUN_DATE
+    assert output_path.read_bytes() != previous_bytes
+    services.agent.run.assert_awaited_once()
+
+
+@pytest.mark.parametrize("failure_phase", ["agent", "validation"])
+async def test_failed_regeneration_preserves_existing_day(
+    generation_services: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_phase: str,
+) -> None:
+    """Generation and validation failures cannot erase the prior canonical record."""
+    services = generation_services
+    output_path = await generate(services)
+    previous_bytes = output_path.read_bytes()
+    if failure_phase == "agent":
+        services.agent.run.side_effect = ValueError("regeneration failed")
+    else:
+        monkeypatch.setattr(
+            daily, "assemble_daily_record", Mock(side_effect=ValueError("regeneration failed"))
+        )
+
+    with pytest.raises(ValueError, match="regeneration failed"):
+        await generate(services)
+
+    assert output_path.read_bytes() == previous_bytes
+    staged_outputs = list(
+        (services.data_dir / ".run-staging" / str(RUN_DATE)).glob(f"*/{RUN_DATE}.json")
+    )
+    assert len(staged_outputs) == 1
+    outcomes = [
+        json.loads(path.read_text())
+        for path in (services.data_dir / "runs" / str(RUN_DATE)).glob("*/diagnostics.json")
+    ]
+    assert {outcome["status"] for outcome in outcomes} == {"accepted", "failed"}
+    assert (
+        next(outcome for outcome in outcomes if outcome["status"] == "failed")["committed"] is False
+    )
+
+
 @pytest.mark.parametrize(
     "dependency_name", ["daily_store", "artifact_store", "local_work_root", "resources_dir"]
 )
@@ -272,7 +333,7 @@ async def test_local_generation_uses_separate_dependency_directories(
     assert not (local_work_root / "days").exists()
 
 
-async def test_offline_end_to_end_and_idempotent_rerun(generation_services, monkeypatch):
+async def test_offline_end_to_end_and_fresh_rerun(generation_services):
     services = generation_services
     output_path = await generate(services)
     record = DailyRecord.model_validate_json(Path(output_path).read_bytes())
@@ -315,28 +376,28 @@ async def test_offline_end_to_end_and_idempotent_rerun(generation_services, monk
     assert not list(workspace.rglob("diagnostics.json"))
     original_bytes = output_path.read_bytes()
 
-    def fail_if_constructed(*args: Any, **kwargs: Any) -> None:
-        """Ensure successful reruns do not need credentials or provider clients."""
-        raise AssertionError("provider construction on a no-op rerun")
+    assert artifacts[0].with_name(f"{RUN_DATE}.json").read_bytes() == original_bytes
 
-    monkeypatch.setattr(daily, "ClaudeService", fail_if_constructed)
-    monkeypatch.setattr(daily, "SpotifyService", fail_if_constructed)
-    monkeypatch.setattr(daily, "PlaylistAgent", fail_if_constructed)
-    assert await daily.generate_day(
-        RUN_DATE, **local_dependencies(services.data_dir), now=NOW
-    ) == str(output_path)
+    async def regenerate(**kwargs: Any) -> PlaylistAgentResult:
+        """Produce distinct validated output for the next invocation."""
+        result = await services.run_agent(**kwargs)
+        proposal = result.proposal.model_copy(update={"title": "A fresh rainy playlist"})
+        kwargs["proposal_sink"](proposal)
+        return PlaylistAgentResult(proposal=proposal, prompt=result.prompt)
+
+    services.agent.run.side_effect = regenerate
+    assert await generate(services) == output_path
+    replacement_bytes = output_path.read_bytes()
+    assert replacement_bytes != original_bytes
+    assert DailyRecord.model_validate_json(replacement_bytes).title == "A fresh rainy playlist"
     rerun_artifacts = list((services.data_dir / "runs/2026-10-27").glob("*/diagnostics.json"))
     assert len(rerun_artifacts) == 2
-    outcomes = [json.loads(path.read_text()) for path in rerun_artifacts]
-    assert {outcome["status"] for outcome in outcomes} == {"accepted", "skipped"}
-    assert (
-        next(outcome for outcome in outcomes if outcome["status"] == "skipped")["reason"]
-        == "existing_daily_record"
-    )
+    assert {json.loads(path.read_text())["status"] for path in rerun_artifacts} == {"accepted"}
     assert len({path.parent.name for path in rerun_artifacts}) == 2
     assert len(list((services.data_dir / ".run-staging/2026-10-27").iterdir())) == 2
-    assert output_path.read_bytes() == original_bytes
-    assert services.agent.run.await_count == 1
+    archived_bytes = [path.with_name(f"{RUN_DATE}.json").read_bytes() for path in rerun_artifacts]
+    assert set(archived_bytes) == {original_bytes, replacement_bytes}
+    assert services.agent.run.await_count == 2
 
 
 async def test_verbose_generation_streams_transcript_to_stderr(generation_services, capsys):
@@ -355,17 +416,6 @@ async def test_verbose_generation_streams_transcript_to_stderr(generation_servic
     assert console.out == ""
     assert console.err == transcript_path.read_text()
     assert json.loads(console.err.splitlines()[-1])["status"] == "accepted"
-
-
-async def test_existing_malformed_day_is_preserved(generation_services):
-    services = generation_services
-    output_path = services.data_dir / "days/2026-10-27.json"
-    output_path.parent.mkdir()
-    output_path.write_text("malformed fixture")
-    with pytest.raises(ValueError):
-        await generate(services)
-    assert output_path.read_text() == "malformed fixture"
-    services.agent.run.assert_not_awaited()
 
 
 async def test_provider_failure_records_outcome_without_a_daily_file(generation_services):
@@ -609,12 +659,12 @@ async def test_live_generation_writes_only_a_pending_temporary_day(tmp_path):
 class MemoryDailyStore:
     """Keep canonical bytes and scripted write outcomes entirely outside the filesystem."""
 
-    def __init__(self, *, create_mode: str = "success") -> None:
+    def __init__(self, *, write_mode: str = "success") -> None:
         self.records: dict[date, bytes] = {}
         self.read_dates: list[date] = []
-        self.create_calls = 0
-        self.create_mode = create_mode
-        self.creation_error = OSError("canonical write interrupted")
+        self.write_calls = 0
+        self.write_mode = write_mode
+        self.write_error = OSError("canonical write interrupted")
         self.read_error: Exception | None = None
 
     def storage_location(self, run_date: date) -> str:
@@ -628,18 +678,14 @@ class MemoryDailyStore:
             raise self.read_error
         return self.records.get(run_date)
 
-    async def create(self, run_date: date, content: bytes) -> str:
-        """Model conflicts, failed writes, and lost acknowledgements without retries."""
-        self.create_calls += 1
-        if self.create_mode in {"success", "ambiguous_commit", "conflict_valid", "cancel_commit"}:
+    async def write(self, run_date: date, content: bytes) -> str:
+        """Model replacements, failed writes, and lost acknowledgements without retries."""
+        self.write_calls += 1
+        if self.write_mode in {"success", "ambiguous_commit", "cancel_commit"}:
             self.records[run_date] = content
-        elif self.create_mode == "conflict_invalid":
-            self.records[run_date] = b"malformed"
-        if self.create_mode.startswith("conflict"):
-            raise RecordExists(self.storage_location(run_date))
-        if self.create_mode.startswith("ambiguous"):
-            raise self.creation_error
-        if self.create_mode.startswith("cancel"):
+        if self.write_mode.startswith("ambiguous"):
+            raise self.write_error
+        if self.write_mode.startswith("cancel"):
             raise asyncio.CancelledError()
         return self.storage_location(run_date)
 
@@ -658,6 +704,8 @@ class MemoryArtifactStore:
             self.fail_at == "initial"
             or self.fail_at == "precommit"
             and relative_name == "proposal.json"
+            or self.fail_at == "output_archive"
+            and relative_name == f"{run_date}.json"
             or self.fail_at == "postcommit"
             and relative_name == "diagnostics.json"
             and json.loads(content).get("status") == "accepted"
@@ -698,52 +746,48 @@ async def generate_in_memory(
     )
 
 
-async def test_injected_uri_stores_and_audited_skip(generation_services):
+async def test_injected_uri_stores_regenerate_and_archive(generation_services, monkeypatch):
     services = generation_services
     daily_store = MemoryDailyStore()
     artifact_store = MemoryArtifactStore()
+    original_write = daily_store.write
+
+    async def write_after_archive(run_date: date, content: bytes) -> str:
+        """Require exact archived output before making each replacement visible."""
+        archives = [
+            artifact_content
+            for (_, relative_name), artifact_content in artifact_store.artifacts.items()
+            if relative_name == f"{run_date}.json"
+        ]
+        assert len(archives) == daily_store.write_calls + 1
+        assert content in archives
+        return await original_write(run_date, content)
+
+    monkeypatch.setattr(daily_store, "write", write_after_archive)
     location = await generate_in_memory(services, daily_store, artifact_store)
     assert location == daily_store.storage_location(RUN_DATE)
     assert isinstance(location, str)
     assert DailyRecord.model_validate_json(daily_store.records[RUN_DATE]).date == RUN_DATE
     assert not (services.data_dir / "days").exists()
-    assert len(daily_store.read_dates) == 31
+    assert len(daily_store.read_dates) == 30
+    assert RUN_DATE not in daily_store.read_dates
     assert await generate_in_memory(services, daily_store, artifact_store) == location
-    assert daily_store.create_calls == 1
-    services.agent.run.assert_awaited_once()
+    assert daily_store.write_calls == 2
+    assert services.agent.run.await_count == 2
     outcomes = [
         json.loads(content)
         for (_, name), content in artifact_store.artifacts.items()
         if name == "diagnostics.json"
     ]
-    assert {outcome["status"] for outcome in outcomes} == {"accepted", "skipped"}
+    assert {outcome["status"] for outcome in outcomes} == {"accepted"}
     assert len({outcome["run_id"] for outcome in outcomes}) == 2
 
 
-@pytest.mark.parametrize("create_mode", ["conflict_valid", "conflict_invalid", "conflict_missing"])
-async def test_create_conflict_validates_reread(generation_services, create_mode):
-    daily_store = MemoryDailyStore(create_mode=create_mode)
-    artifact_store = MemoryArtifactStore()
-    if create_mode == "conflict_valid":
-        assert await generate_in_memory(generation_services, daily_store, artifact_store) == (
-            daily_store.storage_location(RUN_DATE)
-        )
-        _, outcome = staged_diagnostics(generation_services)
-        assert outcome["status"] == "skipped"
-        assert outcome["reason"] == "daily_record_created_elsewhere"
-    else:
-        with pytest.raises((ValueError, RecordExists)):
-            await generate_in_memory(generation_services, daily_store, artifact_store)
-        assert staged_diagnostics(generation_services)[1]["status"] == "failed"
-    assert daily_store.create_calls == 1
-    assert daily_store.read_dates.count(RUN_DATE) == 2
-
-
 @pytest.mark.parametrize("committed", [True, False])
-async def test_ambiguous_creation_reconciles_once(generation_services, committed):
-    daily_store = MemoryDailyStore(
-        create_mode="ambiguous_commit" if committed else "ambiguous_lost"
-    )
+async def test_ambiguous_write_reconciles_once(generation_services, committed):
+    daily_store = MemoryDailyStore(write_mode="ambiguous_commit" if committed else "ambiguous_lost")
+    previous_bytes = b"previous daily record"
+    daily_store.records[RUN_DATE] = previous_bytes
     if committed:
         assert await generate_in_memory(
             generation_services, daily_store, MemoryArtifactStore()
@@ -752,37 +796,46 @@ async def test_ambiguous_creation_reconciles_once(generation_services, committed
     else:
         with pytest.raises(OSError) as caught:
             await generate_in_memory(generation_services, daily_store, MemoryArtifactStore())
-        assert caught.value is daily_store.creation_error
+        assert caught.value is daily_store.write_error
         assert any("reconcil" in note.lower() for note in caught.value.__notes__)
         assert staged_diagnostics(generation_services)[1]["status"] == "failed"
-    assert daily_store.create_calls == 1
-    assert daily_store.read_dates.count(RUN_DATE) == 2
+    assert daily_store.write_calls == 1
+    assert daily_store.read_dates.count(RUN_DATE) == 1
+    if committed:
+        assert DailyRecord.model_validate_json(daily_store.records[RUN_DATE]).date == RUN_DATE
+    else:
+        assert daily_store.records[RUN_DATE] == previous_bytes
 
 
-async def test_initial_read_failure_is_audited_without_providers(generation_services):
+async def test_history_read_failure_is_audited_without_providers(generation_services):
     daily_store = MemoryDailyStore()
     daily_store.read_error = OSError("read unavailable")
     with pytest.raises(OSError, match="read unavailable"):
         await generate_in_memory(generation_services, daily_store, MemoryArtifactStore())
     generation_services.claude.score_mood.assert_not_awaited()
     generation_services.agent.run.assert_not_awaited()
-    assert daily_store.create_calls == 0
+    assert daily_store.write_calls == 0
     assert staged_diagnostics(generation_services)[1]["status"] == "failed"
 
 
-@pytest.mark.parametrize("fail_at", ["initial", "precommit", "postcommit"])
+@pytest.mark.parametrize("fail_at", ["initial", "precommit", "output_archive", "postcommit"])
 async def test_artifact_failure_boundaries_and_original_run_recovery(
     generation_services, monkeypatch, fail_at
 ):
     monkeypatch.setattr(RunRecorder, "retry_delay", 0)
     daily_store = MemoryDailyStore()
+    previous_bytes = b"previous canonical record"
+    daily_store.records[RUN_DATE] = previous_bytes
     artifact_store = MemoryArtifactStore(fail_at)
     with pytest.raises(Exception) as caught:
         await generate_in_memory(generation_services, daily_store, artifact_store)
     staging_dir, outcome = staged_diagnostics(generation_services)
     assert outcome["status"] == ("accepted" if fail_at == "postcommit" else "failed")
-    assert (RUN_DATE in daily_store.records) is (fail_at == "postcommit")
-    assert daily_store.create_calls == int(fail_at == "postcommit")
+    if fail_at != "postcommit":
+        assert daily_store.records[RUN_DATE] == previous_bytes
+    else:
+        assert daily_store.records[RUN_DATE] != previous_bytes
+    assert daily_store.write_calls == int(fail_at == "postcommit")
     assert any(str(staging_dir) in note for note in caught.value.__notes__)
     if fail_at == "initial":
         generation_services.claude.score_mood.assert_not_awaited()
@@ -793,6 +846,8 @@ async def test_artifact_failure_boundaries_and_original_run_recovery(
         )
     original_run_id = outcome["run_id"]
     artifact_store.fail_at = None
+    canonical_before_recovery = daily_store.records[RUN_DATE]
+    writes_before_recovery = daily_store.write_calls
     await recover_run_artifacts(artifact_store, RUN_DATE, original_run_id, staging_dir)
     assert (
         json.loads(artifact_store.artifacts[original_run_id, "diagnostics.json"])["status"]
@@ -800,19 +855,34 @@ async def test_artifact_failure_boundaries_and_original_run_recovery(
     )
     assert {run_id for run_id, _ in artifact_store.artifacts} == {original_run_id}
     assert staging_dir.exists()
+    assert daily_store.records[RUN_DATE] == canonical_before_recovery
+    assert daily_store.write_calls == writes_before_recovery
+    output_filename = f"{RUN_DATE}.json"
+    staged_output = staging_dir / output_filename
+    if fail_at != "initial":
+        assert (
+            artifact_store.artifacts[original_run_id, output_filename] == staged_output.read_bytes()
+        )
+    else:
+        assert not staged_output.exists()
+        assert (original_run_id, output_filename) not in artifact_store.artifacts
 
 
 @pytest.mark.parametrize("committed", [True, False])
-async def test_cancellation_during_creation_reconciles_and_propagates(
-    generation_services, committed
-):
-    daily_store = MemoryDailyStore(create_mode="cancel_commit" if committed else "cancel_lost")
+async def test_cancellation_during_write_reconciles_and_propagates(generation_services, committed):
+    daily_store = MemoryDailyStore(write_mode="cancel_commit" if committed else "cancel_lost")
+    previous_bytes = b"previous daily record"
+    daily_store.records[RUN_DATE] = previous_bytes
     with pytest.raises(asyncio.CancelledError):
         await generate_in_memory(generation_services, daily_store, MemoryArtifactStore())
     _, outcome = staged_diagnostics(generation_services)
     assert outcome["status"] == ("accepted" if committed else "failed")
-    assert daily_store.read_dates.count(RUN_DATE) == 2
-    assert daily_store.create_calls == 1
+    assert daily_store.read_dates.count(RUN_DATE) == 1
+    assert daily_store.write_calls == 1
+    if committed:
+        assert DailyRecord.model_validate_json(daily_store.records[RUN_DATE]).date == RUN_DATE
+    else:
+        assert daily_store.records[RUN_DATE] == previous_bytes
 
 
 async def test_setup_failure_archives_partial_workspace(generation_services):
@@ -865,15 +935,15 @@ async def test_naive_timestamp_fails_before_staging(generation_services):
 
 
 @pytest.mark.parametrize("reconciliation_result", ["different", "read_error", "timeout"])
-async def test_ambiguous_creation_preserves_original_error_when_reconciliation_fails(
+async def test_ambiguous_write_preserves_original_error_when_reconciliation_fails(
     generation_services, monkeypatch, reconciliation_result
 ):
-    daily_store = MemoryDailyStore(create_mode="ambiguous_lost")
+    daily_store = MemoryDailyStore(write_mode="ambiguous_lost")
     original_read = daily_store.read
 
     async def reconcile_read(run_date: date) -> bytes | None:
         """Change only the reconciliation read, leaving preparation reads intact."""
-        if daily_store.create_calls and run_date == RUN_DATE:
+        if daily_store.write_calls and run_date == RUN_DATE:
             if reconciliation_result == "different":
                 return b"different bytes"
             if reconciliation_result == "read_error":
@@ -884,8 +954,8 @@ async def test_ambiguous_creation_preserves_original_error_when_reconciliation_f
     monkeypatch.setattr(daily_store, "read", reconcile_read)
     with pytest.raises(OSError) as caught:
         await generate_in_memory(generation_services, daily_store, MemoryArtifactStore())
-    assert caught.value is daily_store.creation_error
-    assert daily_store.create_calls == 1
+    assert caught.value is daily_store.write_error
+    assert daily_store.write_calls == 1
     outcome = staged_diagnostics(generation_services)[1]
     assert outcome["status"] == "failed"
     expected = {
@@ -897,20 +967,14 @@ async def test_ambiguous_creation_preserves_original_error_when_reconciliation_f
     assert "read payload" not in json.dumps(outcome)
 
 
-async def test_existing_record_with_wrong_date_fails_without_generation(generation_services):
+async def test_existing_record_with_wrong_date_is_replaced(generation_services):
     services = generation_services
-    source_path = await generate(services)
-    payload = json.loads(source_path.read_bytes())
-    payload["date"] = "2026-10-26"
     daily_store = MemoryDailyStore()
-    daily_store.records[RUN_DATE] = json.dumps(payload).encode()
-    services.claude.score_mood.reset_mock()
-    services.agent.run.reset_mock()
-    with pytest.raises(ValueError, match="existing daily file is invalid"):
-        await generate_in_memory(services, daily_store, MemoryArtifactStore())
-    services.claude.score_mood.assert_not_awaited()
-    services.agent.run.assert_not_awaited()
-    assert daily_store.create_calls == 0
+    daily_store.records[RUN_DATE] = b'{"date": "2026-10-26"}'
+    await generate_in_memory(services, daily_store, MemoryArtifactStore())
+    assert DailyRecord.model_validate_json(daily_store.records[RUN_DATE]).date == RUN_DATE
+    services.agent.run.assert_awaited_once()
+    assert daily_store.write_calls == 1
 
 
 async def test_custom_local_work_root_is_retained(generation_services, tmp_path):
@@ -941,7 +1005,7 @@ async def test_cancellation_before_commit_archives_agent_evidence(generation_ser
     staging_dir, outcome = staged_diagnostics(services)
     assert outcome["status"] == "failed"
     assert outcome["error_type"] == "CancelledError"
-    assert daily_store.create_calls == 0
+    assert daily_store.write_calls == 0
     assert (outcome["run_id"], "proposal.json") in artifact_store.artifacts
     assert (staging_dir / "search_results.json").is_file()
 
@@ -1018,25 +1082,28 @@ async def test_failure_artifacts_redact_exception_chain_and_console(
         assert json.dumps(secret)[1:-1] not in output
 
 
-async def test_skip_artifact_failure_retains_local_failed_outcome(generation_services, monkeypatch):
-    """An uncommitted invocation remains failed when its skip audit cannot upload."""
+async def test_failed_run_audit_failure_retains_local_outcome(generation_services, monkeypatch):
+    """A failed regeneration retains its outcome when final diagnostics cannot upload."""
     daily_store = MemoryDailyStore()
     await generate_in_memory(generation_services, daily_store, MemoryArtifactStore())
+    previous_bytes = daily_store.records[RUN_DATE]
+    generation_services.agent.run.side_effect = ValueError("agent failed")
 
-    class FailedSkipStore(MemoryArtifactStore):
-        """Reject the terminal skip snapshot while allowing startup evidence."""
+    class FailedOutcomeStore(MemoryArtifactStore):
+        """Reject terminal failed diagnostics while allowing startup evidence."""
 
         async def write(
             self, run_date: date, run_id: str, relative_name: str, content: bytes
         ) -> str:
-            """Fail the skip audit after the existing day was validated."""
-            if relative_name == "diagnostics.json" and json.loads(content)["status"] == "skipped":
-                raise OSError("skip audit unavailable")
+            """Fail the outcome audit after generation has failed."""
+            if relative_name == "diagnostics.json" and json.loads(content)["status"] == "failed":
+                raise OSError("outcome audit unavailable")
             return await super().write(run_date, run_id, relative_name, content)
 
     monkeypatch.setattr(RunRecorder, "retry_delay", 0)
-    with pytest.raises(ExceptionGroup):
-        await generate_in_memory(generation_services, daily_store, FailedSkipStore())
+    with pytest.raises(ValueError, match="agent failed") as caught:
+        await generate_in_memory(generation_services, daily_store, FailedOutcomeStore())
+    assert any("finalization failed" in note for note in caught.value.__notes__)
     diagnostics = [
         json.loads(path.read_bytes())
         for path in (generation_services.data_dir / ".run-staging" / str(RUN_DATE)).glob(
@@ -1044,5 +1111,6 @@ async def test_skip_artifact_failure_retains_local_failed_outcome(generation_ser
         )
     ]
     assert {outcome["status"] for outcome in diagnostics} == {"accepted", "failed"}
-    assert daily_store.create_calls == 1
-    generation_services.agent.run.assert_awaited_once()
+    assert daily_store.write_calls == 1
+    assert daily_store.records[RUN_DATE] == previous_bytes
+    assert generation_services.agent.run.await_count == 2
