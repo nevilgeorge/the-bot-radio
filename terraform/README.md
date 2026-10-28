@@ -20,6 +20,12 @@ terraform -chdir=terraform apply hosting.tfplan
 Review the plan before applying. Keep `name_prefix` unchanged: it also determines the retained
 data bucket name, whose `prevent_destroy` protection blocks replacement.
 
+The website S3 rollout adds only `aws_iam_user.web` and `aws_iam_user_policy.web` with a
+`web_iam_user_name` output. Inspect the complete plan for unrelated drift before applying;
+do not accept Lightsail replacement, ECS changes, or bucket-policy changes as part of this
+credential rollout. Confirm the selected AWS account owns the bucket before applying, using
+`aws s3api head-bucket --bucket the-bot-radio-staging-data --expected-bucket-owner ACCOUNT-ID`.
+
 Instance replacement loses its local data. Back up `/var/lib/the-bot-radio/data` before
 approving replacement, then restore or seed the new server. Terraform recreates the static IP
 attachment and firewall when replacing the instance. The static IP remains the same if its
@@ -27,7 +33,7 @@ resource is retained; the SSH host key changes and must be verified again.
 
 ## Set up a new installation
 
-Requirements: Terraform >=1.10 and <2, AWS credentials permitted to manage Lightsail and S3,
+Requirements: Terraform >=1.10 and <2, AWS credentials permitted to manage Lightsail, S3, IAM,
 and an SSH key pair. Skip state-bucket creation for an existing installation.
 
 ```bash
@@ -76,14 +82,31 @@ DNS points to the instance; allow existing DNS caches to expire. See
 
 ## Data and backups
 
-The website reads `/var/lib/the-bot-radio/data` on the instance. Code deployments preserve
-it; instance replacement does not. There is no automatic backup, S3 synchronization, or
-enabled playlist generation schedule. The generator infrastructure is staged separately; see
+The website keeps personas and input descriptions in `/var/lib/the-bot-radio/data` on the
+instance. Daily records can come from local files or the S3 memory cache. Code deployments
+preserve the local data; instance replacement does not. There is no automatic backup,
+S3 synchronization, or enabled playlist generation schedule. The generator infrastructure is staged separately; see
 [generator rollout](../deploy/generation.md).
 
 The retained bucket stays at `aws_s3_bucket.site["data"]`, with encryption, versioning,
 public-access blocking, ownership controls, lifecycle rules, TLS-only access, and destruction
 protection. The state backend and its bootstrap are separate from application data.
+
+## Website S3 identity
+
+Terraform creates `${var.name_prefix}-web` without a console login. Its inline policy permits
+`s3:ListBucket` only with `s3:prefix` exactly `production/days/`, and `s3:GetObject` only on
+the managed data bucket's `production/days/*`. With the current staging name prefix, this
+is `s3://the-bot-radio-staging-data/production/days/`. Bucket policies and ECS roles are
+unchanged. The bucket and user must be in the same AWS account.
+
+No access-key resource is configured. Create and rotate keys outside Terraform so secrets
+never enter configuration, outputs, plans, or state. After applying the reviewed IAM change,
+use [website S3 setup](../deploy/README.md#initial-setup) to create a private temporary key
+file and run `deploy/configure-web-s3.sh`. The same command configures future instances
+after local metadata is initialized. It installs a systemd drop-in without changing Lightsail
+bootstrap or triggering replacement. See the deployment guide for verification, rotation,
+automatic/manual rollback, and cache-freshness checks.
 
 ## Local checks
 
