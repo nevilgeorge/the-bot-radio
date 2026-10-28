@@ -1,0 +1,23 @@
+# Only build metadata and application source may enter the build context.
+**
+!pyproject.toml
+!uv.lock
+!README.md
+!deploy/
+!deploy/Dockerfile.generator
+!src/
+!src/**
+# Exclude accidental local artifacts even inside application source.
+**/__pycache__
+**/*.pyc
+**/.env*
+**/.aws
+**/.claude
+**/credentials*
+**/*.pem
+**/*.key
+**/.git
+**/.venv
+**/data
+**/*.tf
+**/*.tfstate*

@@ -1,7 +1,10 @@
 # Deploying the application
 
 Run commands from the repository root. Infrastructure setup and changes are covered in
-[Lightsail hosting](../terraform/README.md).
+[Lightsail hosting](../terraform/README.md). For the staged ECS daily generator, see
+[generator releases and rollout](generation.md). Trigger a one-off task with
+`./deploy/generate-remote.py`, using the same arguments as `the-bot-radio-generate`;
+see [remote invocation](generation.md#one-off-remote-generator).
 
 ## Deploy code
 

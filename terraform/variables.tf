@@ -40,3 +40,27 @@ variable "availability_zone" {
     error_message = "Choose an availability zone in us-east-1."
   }
 }
+
+variable "generation_image_uri" {
+  description = "Immutable generator ECR digest URI; null stages foundation resources only."
+  type        = string
+  default     = null
+  nullable    = true
+  validation {
+    condition = var.generation_image_uri == null ? true : (
+      startswith(var.generation_image_uri, "${aws_ecr_repository.generation.repository_url}@sha256:") &&
+      can(regex("@sha256:[a-f0-9]{64}$", var.generation_image_uri))
+    )
+    error_message = "Supply a sha256 digest URI from this configuration's generator ECR repository."
+  }
+}
+
+variable "generation_schedule_enabled" {
+  description = "Keep false until S3 integration, durable duplicate protection and end-to-end validation are complete."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !var.generation_schedule_enabled || var.generation_image_uri != null
+    error_message = "A generator image digest URI is required before enabling the schedule."
+  }
+}

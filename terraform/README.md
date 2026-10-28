@@ -78,7 +78,8 @@ DNS points to the instance; allow existing DNS caches to expire. See
 
 The website reads `/var/lib/the-bot-radio/data` on the instance. Code deployments preserve
 it; instance replacement does not. There is no automatic backup, S3 synchronization, or
-playlist generation schedule.
+enabled playlist generation schedule. The generator infrastructure is staged separately; see
+[generator rollout](../deploy/generation.md).
 
 The retained bucket stays at `aws_s3_bucket.site["data"]`, with encryption, versioning,
 public-access blocking, ownership controls, lifecycle rules, TLS-only access, and destruction
@@ -97,3 +98,13 @@ uv tool run --from shellcheck-py shellcheck terraform/templates/bootstrap.sh
 
 Terraform tests mock AWS and create no cloud resources. The deployment tests also check that
 Lightsail's shell wrapper hands the bootstrap to Bash; see [deployment checks](../deploy/README.md#local-checks).
+
+## Daily generator
+
+The root configuration also stages dedicated ECS Fargate, ECR, networking, logging, IAM,
+Secrets Manager metadata, and a Scheduler dead-letter queue. `generation_image_uri` defaults
+to null, so the foundation can be applied before the first image exists. Supplying a digest
+creates the task definition and disabled 06:00 New York schedule. Keep
+`generation_schedule_enabled = false` through this stage. Follow the
+[generator rollout and manual smoke check](../deploy/generation.md) for secret setup, image
+releases, IAM review, failure inspection, and rollback.
