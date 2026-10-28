@@ -103,7 +103,10 @@ prompt; `ClaudeService` handles standalone requests such as mood scoring. A `Pla
 binds the run context to the shared validation checks and is injected into the agent for tool
 feedback and final proposal validation. The agent returns a proposal and archived prompt. The daily job adds trusted metadata once, validates the
 assembled record, and creates it through the daily storage interface. `generate_day()` returns
-its location string and accepts injected daily/artifact stores and a staging root.
+its location string and requires explicit daily/artifact stores, a local staging root,
+and a resource directory, with the run date as its first positional argument. The CLI
+selects the stores and default staging location from `--data-dir` and environment
+configuration and supplies the packaged resources.
 
 Artifact failures after a confirmed commit leave the day accepted but make the command fail.
 Stderr reports the committed location and retained staging directory. Recover uploads with

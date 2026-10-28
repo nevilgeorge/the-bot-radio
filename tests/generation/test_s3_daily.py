@@ -100,8 +100,9 @@ class FakeS3Client:
 async def generate_in_s3(services: SimpleNamespace, client: FakeS3Client) -> str:
     """Run production orchestration with S3 adapters and fake provider services."""
     return await generate_day(
-        services.data_dir,
         RUN_DATE,
+        staging_root=services.data_dir / ".run-staging",
+        resources_dir=services.data_dir,
         now=NOW,
         claude_service=services.claude,
         spotify_service=services.spotify,
@@ -119,6 +120,11 @@ async def test_s3_generation_and_audited_rerun_skip(generation_services: SimpleN
     assert record.date == RUN_DATE
     assert record.publication_status == "pending"
     assert not (generation_services.data_dir / "days").exists()
+    assert not (generation_services.data_dir / "runs").exists()
+    staging_directory, staged_outcome = staged_diagnostics(generation_services)
+    assert staging_directory.is_relative_to(generation_services.data_dir / ".run-staging")
+    assert (staging_directory / "workspace/catalog.jsonl").is_file()
+    assert staged_outcome["status"] == "accepted"
     assert len(client.read_keys) == 31
     original_content = client.objects[DAILY_KEY]
     assert await generate_in_s3(generation_services, client) == location

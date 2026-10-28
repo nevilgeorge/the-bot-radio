@@ -15,7 +15,7 @@ from the_bot_radio.catalog import CatalogTrack
 from the_bot_radio.generation import preparation
 from the_bot_radio.generation.models import DailyRecord
 from the_bot_radio.generation.runtime import RunRecorder
-from the_bot_radio.generation.storage import LocalRunArtifactStore
+from the_bot_radio.generation.storage import LocalDailyRecordStore, LocalRunArtifactStore
 from the_bot_radio.services.inputs.base import TZ, Reading
 from the_bot_radio.web.models import Mood
 
@@ -137,7 +137,13 @@ async def prepare(
     )
     async with httpx.AsyncClient() as client:
         result = await preparation.prepare_run(
-            data_dir, artifact_dir, run_date, now, client, mood_service, resources_dir=data_dir
+            artifact_dir,
+            run_date,
+            now,
+            client,
+            mood_service,
+            resources_dir=data_dir,
+            daily_store=LocalDailyRecordStore(data_dir),
         )
     return result, mood_service
 
@@ -309,7 +315,13 @@ async def test_mood_failure_propagates(tmp_path, fake_readings):
     async with httpx.AsyncClient() as client:
         with pytest.raises(RuntimeError, match="mood failed"):
             await preparation.prepare_run(
-                tmp_path / "data", tmp_path / "run", RUN_DATE, NOW, client, mood_service
+                tmp_path / "run",
+                RUN_DATE,
+                NOW,
+                client,
+                mood_service,
+                resources_dir=tmp_path / "data",
+                daily_store=LocalDailyRecordStore(tmp_path / "data"),
             )
     assert (tmp_path / "run/workspace/catalog.jsonl").exists()
     assert not (tmp_path / "run/workspace/context.json").exists()
@@ -404,7 +416,6 @@ async def test_injected_history_bytes_and_diagnostics_callback(tmp_path, fake_re
     )
     async with httpx.AsyncClient() as client:
         result = await preparation.prepare_run(
-            data_dir,
             tmp_path / "run",
             RUN_DATE,
             NOW,
@@ -522,7 +533,6 @@ async def test_preparation_diagnostics_work_with_run_recorder(tmp_path, fake_rea
         await recorder.start(purpose="preparation integration")
         async with httpx.AsyncClient() as client:
             result = await preparation.prepare_run(
-                data_dir,
                 artifact_dir,
                 RUN_DATE,
                 NOW,
@@ -541,3 +551,33 @@ async def test_preparation_diagnostics_work_with_run_recorder(tmp_path, fake_rea
     assert (stored_run / "workspace/context.json").read_bytes() == (
         result.workspace / "context.json"
     ).read_bytes()
+
+
+@pytest.mark.parametrize("dependency", ["daily_store", "resources_dir"])
+@pytest.mark.parametrize("omit_dependency", [False, True])
+async def test_preparation_requires_dependencies_before_side_effects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dependency: str, omit_dependency: bool
+) -> None:
+    """Missing or null dependencies fail before workspace creation or history reads."""
+    daily_store = MemoryDailyStore({})
+    arguments: dict[str, Any] = {
+        "daily_store": daily_store,
+        "resources_dir": tmp_path / "resources",
+    }
+    if omit_dependency:
+        del arguments[dependency]
+    else:
+        arguments[dependency] = None
+    http_client = object()
+    mood_service = SimpleNamespace(score_mood=AsyncMock())
+    read_all = AsyncMock()
+    monkeypatch.setattr(preparation.runner, "read_all", read_all)
+    error_type = TypeError if omit_dependency else ValueError
+    with pytest.raises(error_type, match=dependency):
+        await preparation.prepare_run(
+            tmp_path / "run", RUN_DATE, NOW, http_client, mood_service, **arguments
+        )
+    assert not list(tmp_path.iterdir())
+    assert not daily_store.requested_dates
+    read_all.assert_not_called()
+    mood_service.score_mood.assert_not_called()

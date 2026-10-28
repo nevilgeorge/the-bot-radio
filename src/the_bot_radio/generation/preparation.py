@@ -23,8 +23,7 @@ from the_bot_radio.generation.models import (
     normalize_artist,
 )
 from the_bot_radio.generation.runtime import update_diagnostics
-from the_bot_radio.generation.storage import DailyRecordStore, LocalDailyRecordStore
-from the_bot_radio.resources import RESOURCE_DIR
+from the_bot_radio.generation.storage import DailyRecordStore
 from the_bot_radio.services.inputs import SERVICES, runner
 from the_bot_radio.services.inputs.base import TZ, Reading, RunContext
 from the_bot_radio.services.inputs.dj_roll import DjRollService
@@ -142,18 +141,21 @@ def _select_dj(run_context: RunContext, history: list[DailyRecord]) -> tuple[Per
 
 
 async def prepare_run(
-    data_dir: Path,
     artifact_dir: Path,
     run_date: date,
     now: datetime,
     http_client: httpx.AsyncClient,
     claude_service: ClaudeService,
     *,
-    resources_dir: Path = RESOURCE_DIR,
-    daily_store: DailyRecordStore | None = None,
+    resources_dir: Path,
+    daily_store: DailyRecordStore,
     diagnostics_sink: DiagnosticsSink | None = None,
 ) -> PreparedRun:
     """Freeze inputs, roll the DJ from published history, and compute the fixed mood."""
+    if daily_store is None:
+        raise ValueError("daily_store must not be None")
+    if resources_dir is None:
+        raise ValueError("resources_dir must not be None")
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("run timestamp must be timezone-aware")
     now = now.astimezone(TZ)
@@ -167,9 +169,7 @@ async def prepare_run(
     catalog = load_catalog(catalog_snapshot)
     if not catalog:
         raise ValueError("shared catalog is missing or empty")
-    history_snapshots, coverage = await _load_history(
-        daily_store if daily_store is not None else LocalDailyRecordStore(data_dir), run_date
-    )
+    history_snapshots, coverage = await _load_history(daily_store, run_date)
     history = [snapshot.record for snapshot in history_snapshots]
     diagnostic_callback = (
         diagnostics_sink
@@ -189,7 +189,7 @@ async def prepare_run(
         raise ValueError("catalog needs five eligible tracks with distinct primary artists")
 
     run_context = RunContext(
-        run_date=run_date, now=now, http=http_client, data_dir=data_dir, resources_dir=resources_dir
+        run_date=run_date, now=now, http=http_client, resources_dir=resources_dir
     )
     persona, dj_reading = _select_dj(run_context, history)
 

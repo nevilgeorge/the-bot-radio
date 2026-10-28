@@ -2,6 +2,7 @@
 
 import asyncio
 import threading
+from datetime import date
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -140,9 +141,11 @@ def test_cli_passes_s3_stores_and_prints_uri(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(daily, "generate_day", generation)
     assert daily.main(["--date", "2026-10-27", "--data-dir", str(tmp_path)]) == 0
     options = generation.call_args.kwargs
+    assert generation.call_args.args == (date(2026, 10, 27),)
     assert options["daily_store"].client is client
     assert options["artifact_store"].client is client
     assert options["staging_root"] == tmp_path / "retained"
+    assert options["resources_dir"] == daily.RESOURCE_DIR
     client.close.assert_called_once()
     assert capsys.readouterr().out == "s3://example-bucket/trial/days/2026-10-27.json\n"
 

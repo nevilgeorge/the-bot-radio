@@ -18,7 +18,11 @@ from the_bot_radio.generation.agent import PlaylistAgentResult
 from the_bot_radio.generation.models import DailyRecord, PlaylistProposal, normalize_artist
 from the_bot_radio.generation.preparation import PreparedRun
 from the_bot_radio.generation.runtime import AgentLimits, RunRecorder, recover_run_artifacts
-from the_bot_radio.generation.storage import RecordExists
+from the_bot_radio.generation.storage import (
+    LocalDailyRecordStore,
+    LocalRunArtifactStore,
+    RecordExists,
+)
 from the_bot_radio.generation.tools import PlaylistTools
 from the_bot_radio.generation.validation import PlaylistValidator, assemble_daily_record
 from the_bot_radio.services.inputs import runner
@@ -29,6 +33,13 @@ from the_bot_radio.web.models import Mood
 pytestmark = pytest.mark.anyio
 RUN_DATE = date(2026, 10, 27)
 NOW = datetime(2026, 10, 27, 6, tzinfo=TZ)
+
+
+@pytest.fixture(autouse=True)
+def local_cli_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep CLI tests independent of ambient AWS storage configuration."""
+    for variable_name in ("BOT_RADIO_S3_BUCKET", "BOT_RADIO_S3_PREFIX", "BOT_RADIO_RUN_DIR"):
+        monkeypatch.delenv(variable_name, raising=False)
 
 
 @pytest.fixture
@@ -148,18 +159,117 @@ def generation_services(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Simp
     )
 
 
+def local_dependencies(data_dir: Path) -> dict[str, Any]:
+    """Select explicit local generation dependencies for fixture evidence."""
+    return {
+        "daily_store": LocalDailyRecordStore(data_dir),
+        "artifact_store": LocalRunArtifactStore(data_dir),
+        "staging_root": data_dir / ".run-staging",
+        "resources_dir": data_dir,
+    }
+
+
 async def generate(services: SimpleNamespace) -> Path:
     """Invoke the real local job with injected provider boundaries."""
     return Path(
         await daily.generate_day(
-            services.data_dir,
             RUN_DATE,
+            **local_dependencies(services.data_dir),
             now=NOW,
             claude_service=services.claude,
             spotify_service=services.spotify,
             playlist_agent=services.agent,
         )
     )
+
+
+@pytest.mark.parametrize(
+    "dependency_name", ["daily_store", "artifact_store", "staging_root", "resources_dir"]
+)
+@pytest.mark.parametrize("explicit_none", [False, True], ids=["omitted", "none"])
+async def test_dependencies_are_required_before_any_side_effects(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    dependency_name: str,
+    explicit_none: bool,
+) -> None:
+    """Reject absent dependencies before storage, filesystem, or provider activity."""
+    daily_store = Mock()
+    artifact_store = Mock()
+    dependencies: dict[str, Any] = {
+        "daily_store": daily_store,
+        "artifact_store": artifact_store,
+        "staging_root": tmp_path / "staging",
+        "resources_dir": tmp_path / "resources",
+    }
+    if explicit_none:
+        dependencies[dependency_name] = None
+    else:
+        del dependencies[dependency_name]
+    boundaries = [
+        (daily.uuid, "uuid4"),
+        (daily, "RunRecorder"),
+        (daily, "make_http_client"),
+        (daily, "ClaudeService"),
+        (daily, "SpotifyService"),
+        (daily, "PlaylistAgent"),
+        (daily, "prepare_run"),
+    ]
+    boundary_mocks = []
+    for owner, attribute in boundaries:
+        boundary_mock = Mock(side_effect=AssertionError(f"unexpected {attribute} call"))
+        monkeypatch.setattr(owner, attribute, boundary_mock)
+        boundary_mocks.append(boundary_mock)
+
+    with pytest.raises(ValueError if explicit_none else TypeError, match=dependency_name):
+        await daily.generate_day(RUN_DATE, **dependencies)
+
+    assert daily_store.mock_calls == []
+    assert artifact_store.mock_calls == []
+    for boundary_mock in boundary_mocks:
+        boundary_mock.assert_not_called()
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_local_generation_uses_separate_dependency_directories(
+    generation_services: SimpleNamespace, tmp_path: Path
+) -> None:
+    """Keep resources, canonical output, archived evidence, and staging independent."""
+    services = generation_services
+    daily_root = tmp_path / "daily-output"
+    artifact_root = tmp_path / "artifact-output"
+    staging_root = tmp_path / "staging"
+    resources_before = {path.name: path.read_bytes() for path in services.data_dir.iterdir()}
+
+    output_path = Path(
+        await daily.generate_day(
+            RUN_DATE,
+            daily_store=LocalDailyRecordStore(daily_root),
+            artifact_store=LocalRunArtifactStore(artifact_root),
+            staging_root=staging_root,
+            resources_dir=services.data_dir,
+            now=NOW,
+            claude_service=services.claude,
+            spotify_service=services.spotify,
+            playlist_agent=services.agent,
+        )
+    )
+
+    assert output_path == daily_root / "days" / f"{RUN_DATE}.json"
+    assert DailyRecord.model_validate_json(output_path.read_bytes()).date == RUN_DATE
+    [artifact_directory] = (artifact_root / "runs" / str(RUN_DATE)).iterdir()
+    staging_directory = staging_root / str(RUN_DATE) / artifact_directory.name
+    assert (staging_directory / "workspace" / "history").is_dir()
+    assert (artifact_directory / "diagnostics.json").is_file()
+    assert (artifact_directory / "workspace" / "catalog.jsonl").read_bytes() == (
+        services.data_dir / "shared_catalog.jsonl"
+    ).read_bytes()
+    assert {
+        path.name: path.read_bytes() for path in services.data_dir.iterdir()
+    } == resources_before
+    assert not (daily_root / "runs").exists()
+    assert not (artifact_root / "days").exists()
+    assert not (staging_root / "days").exists()
 
 
 async def test_offline_end_to_end_and_idempotent_rerun(generation_services, monkeypatch):
@@ -213,7 +323,9 @@ async def test_offline_end_to_end_and_idempotent_rerun(generation_services, monk
     monkeypatch.setattr(daily, "ClaudeService", fail_if_constructed)
     monkeypatch.setattr(daily, "SpotifyService", fail_if_constructed)
     monkeypatch.setattr(daily, "PlaylistAgent", fail_if_constructed)
-    assert await daily.generate_day(services.data_dir, RUN_DATE, now=NOW) == str(output_path)
+    assert await daily.generate_day(
+        RUN_DATE, **local_dependencies(services.data_dir), now=NOW
+    ) == str(output_path)
     rerun_artifacts = list((services.data_dir / "runs/2026-10-27").glob("*/diagnostics.json"))
     assert len(rerun_artifacts) == 2
     outcomes = [json.loads(path.read_text()) for path in rerun_artifacts]
@@ -231,8 +343,8 @@ async def test_offline_end_to_end_and_idempotent_rerun(generation_services, monk
 async def test_verbose_generation_streams_transcript_to_stderr(generation_services, capsys):
     services = generation_services
     await daily.generate_day(
-        services.data_dir,
         RUN_DATE,
+        **local_dependencies(services.data_dir),
         now=NOW,
         claude_service=services.claude,
         spotify_service=services.spotify,
@@ -356,8 +468,8 @@ async def test_default_agent_receives_validator_with_prepared_context(
     monkeypatch.setattr(daily, "PlaylistAgent", agent_factory)
 
     await daily.generate_day(
-        services.data_dir,
         RUN_DATE,
+        **local_dependencies(services.data_dir),
         now=NOW,
         claude_service=services.claude,
         spotify_service=services.spotify,
@@ -375,10 +487,10 @@ async def test_default_agent_receives_validator_with_prepared_context(
 def test_cli_date_precedence_and_limits(tmp_path, monkeypatch, capsys, use_cli_date, verbose):
     captured: dict[str, Any] = {}
 
-    async def fake_generate(data_dir: Path, run_date: date, **kwargs: Any) -> str:
+    async def fake_generate(run_date: date, **kwargs: Any) -> str:
         """Capture resolved CLI configuration without invoking providers."""
-        captured.update(data_dir=data_dir, run_date=run_date, **kwargs)
-        return str(data_dir / "days" / f"{run_date.isoformat()}.json")
+        captured.update(run_date=run_date, **kwargs)
+        return kwargs["daily_store"].storage_location(run_date)
 
     monkeypatch.setattr(daily, "generate_day", fake_generate)
     monkeypatch.setenv("RUN_DATE", "2026-10-25")
@@ -404,6 +516,11 @@ def test_cli_date_precedence_and_limits(tmp_path, monkeypatch, capsys, use_cli_d
     assert captured["limits"] == AgentLimits(12, 2.5, 75)
     assert captured["now"].tzinfo == TZ
     assert captured["verbose"] is verbose
+    assert captured["daily_store"].data_dir == tmp_path
+    assert captured["artifact_store"].data_dir == tmp_path
+    assert captured["staging_root"] == tmp_path / ".run-staging"
+    assert captured["resources_dir"] == daily.RESOURCE_DIR
+    assert "data_dir" not in captured
     assert "days/2026-10-" in capsys.readouterr().out
 
 
@@ -448,8 +565,8 @@ async def test_live_generation_writes_only_a_pending_temporary_day(tmp_path):
         spotify_service = SpotifyService(http_client)
         search_only = SimpleNamespace(search_tracks=spotify_service.search_tracks)
         output_path = await daily.generate_day(
-            data_dir,
             now.date(),
+            **{**local_dependencies(data_dir), "resources_dir": daily.RESOURCE_DIR},
             now=now,
             spotify_service=search_only,
         )
@@ -566,8 +683,9 @@ async def generate_in_memory(
 ) -> str:
     """Exercise orchestration while canonical records and artifacts use URI storage."""
     return await daily.generate_day(
-        services.data_dir,
         RUN_DATE,
+        staging_root=kwargs.pop("staging_root", services.data_dir / ".run-staging"),
+        resources_dir=services.data_dir,
         now=NOW,
         claude_service=services.claude,
         spotify_service=services.spotify,
@@ -736,7 +854,11 @@ async def test_agent_failure_archives_evidence_and_preserves_primary_error(
 
 async def test_naive_timestamp_fails_before_staging(generation_services):
     with pytest.raises(ValueError, match="timezone-aware"):
-        await daily.generate_day(generation_services.data_dir, RUN_DATE, now=datetime(2026, 10, 27))
+        await daily.generate_day(
+            RUN_DATE,
+            **local_dependencies(generation_services.data_dir),
+            now=datetime(2026, 10, 27),
+        )
     assert not (generation_services.data_dir / ".run-staging").exists()
 
 

@@ -1,7 +1,7 @@
 """Generate a pending daily record through injected storage interfaces.
 
-Each invocation retains evidence in data/.run-staging/<date>/<run-id>/ and
-checkpoints snapshots to data/runs/<date>/<run-id>/ by default. Canonical
+Each invocation retains evidence beneath the supplied staging root and
+checkpoints snapshots through the supplied artifact store. Canonical
 records are created once through DailyRecordStore. Skips are audited too.
 One generation job at a time is assumed; no generation lock is used.
 Recover failed uploads with runtime.recover_run_artifacts using the original
@@ -28,8 +28,6 @@ from the_bot_radio.generation.runtime import (
 )
 from the_bot_radio.generation.storage import (
     DailyRecordStore,
-    LocalDailyRecordStore,
-    LocalRunArtifactStore,
     RecordExists,
     RunArtifactStore,
 )
@@ -52,9 +50,12 @@ def validate_existing_record(content: bytes, run_date: date) -> None:
 
 
 async def generate_day(
-    data_dir: Path,
     run_date: date,
     *,
+    daily_store: DailyRecordStore,
+    artifact_store: RunArtifactStore,
+    staging_root: Path,
+    resources_dir: Path,
     now: datetime | None = None,
     model: str = MODEL,
     limits: AgentLimits | None = None,
@@ -62,27 +63,23 @@ async def generate_day(
     claude_service: ClaudeService | None = None,
     spotify_service: SpotifyService | None = None,
     playlist_agent: PlaylistAgent | None = None,
-    daily_store: DailyRecordStore | None = None,
-    artifact_store: RunArtifactStore | None = None,
-    staging_root: Path | None = None,
-    resources_dir: Path | None = None,
 ) -> str:
     """Audit one invocation, checkpoint evidence, and create a canonical day once."""
+    for dependency_name, dependency in (
+        ("daily_store", daily_store),
+        ("artifact_store", artifact_store),
+        ("staging_root", staging_root),
+        ("resources_dir", resources_dir),
+    ):
+        if dependency is None:
+            raise ValueError(f"{dependency_name} is required and must not be None")
     now = now or datetime.now(TZ)
     if now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("run timestamp must be timezone-aware")
     now = now.astimezone(TZ)
     limits = limits or AgentLimits()
-    daily_store = daily_store if daily_store is not None else LocalDailyRecordStore(data_dir)
-    artifact_store = (
-        artifact_store if artifact_store is not None else LocalRunArtifactStore(data_dir)
-    )
     run_id = uuid.uuid4().hex
-    local_run_dir = (
-        (staging_root if staging_root is not None else data_dir / ".run-staging")
-        / run_date.isoformat()
-        / run_id
-    ).resolve()
+    local_run_dir = (staging_root / run_date.isoformat() / run_id).resolve()
     location = daily_store.storage_location(run_date)
     recorder = RunRecorder(
         artifact_store,
@@ -126,13 +123,12 @@ async def generate_day(
                 claude_service = claude_service or ClaudeService()
                 spotify_service = spotify_service or SpotifyService(http_client)
                 prepared = await prepare_run(
-                    data_dir,
                     local_run_dir,
                     run_date,
                     now,
                     http_client,
                     claude_service,
-                    resources_dir=resources_dir if resources_dir is not None else RESOURCE_DIR,
+                    resources_dir=resources_dir,
                     daily_store=daily_store,
                     diagnostics_sink=recorder.update_diagnostics,
                 )
@@ -292,7 +288,6 @@ def main(argv: list[str] | None = None) -> int:
             """Own selected stores until generation has finalized its recorder."""
             async with generation_stores(storage_config) as stores:
                 return await generate_day(
-                    arguments.data_dir,
                     run_date,
                     now=now,
                     model=arguments.model,
@@ -301,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
                     daily_store=stores.daily_store,
                     artifact_store=stores.artifact_store,
                     staging_root=stores.staging_root,
+                    resources_dir=RESOURCE_DIR,
                 )
 
         path = asyncio.run(run_generation())
