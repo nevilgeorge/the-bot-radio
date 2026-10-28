@@ -3,10 +3,14 @@
 import json
 import os
 import re
+from datetime import date, datetime, time
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+
+from the_bot_radio.web import main as web_main
+from the_bot_radio.web.config import TZ
 
 LATEST = "2026-10-26"
 FIXTURE_DJ = {
@@ -295,6 +299,70 @@ def test_empty_data_dir_still_renders(client: TestClient, site_data_dir: Path):
     for path in ["/", "/index", "/inputs", "/bots", "/about"]:
         assert client.get(path).status_code == 200, path
     assert client.get(f"/index/{LATEST}").status_code == 404
+
+
+# ---- resident status -----------------------------------------------------------------
+
+
+@pytest.fixture
+def freeze_today(monkeypatch: pytest.MonkeyPatch):
+    """Pin the pages' notion of "now" to 08:00 ET on the given date."""
+
+    def freeze(day: date) -> None:
+        frozen_now = datetime.combine(day, time(8), tzinfo=TZ)
+
+        class FrozenDatetime(datetime):
+            @classmethod
+            def now(cls, tz=None):  # noqa: ANN001, ANN206
+                return frozen_now.astimezone(tz) if tz else frozen_now.replace(tzinfo=None)
+
+        monkeypatch.setattr(web_main, "datetime", FrozenDatetime)
+
+    return freeze
+
+
+def resident_cards(html: str) -> dict[str, str]:
+    """Resident card HTML keyed by persona id (from the card's /index?dj= link)."""
+    cards = re.findall(r'<a class="resident-card" href="/index\?dj=([^"]+)">(.*?)</a>', html, re.S)
+    return dict(cards)
+
+
+def test_bots_resident_on_air_today(client: TestClient, freeze_today):
+    freeze_today(date(2026, 10, 26))
+    html = client.get("/bots").text
+    cards = resident_cards(html)
+    assert "On air today" in cards["resident-02"]
+    assert '<span class="led" aria-hidden="true">' in cards["resident-02"]
+    assert "resident-card__status--on" in cards["resident-02"]
+    assert "Last aired on SUN 10.25" in cards["resident-01"]
+    assert 'class="led off"' in cards["resident-01"]
+    assert "On air today · rolled at" in html
+
+
+def test_bots_before_todays_record_nobody_on_air(client: TestClient, freeze_today):
+    freeze_today(date(2026, 10, 27))
+    html = client.get("/bots").text
+    cards = resident_cards(html)
+    assert not any("On air today" in card for card in cards.values())
+    assert "Last aired on MON 10.26" in cards["resident-02"]
+    assert "Last on air · MON 10.26" in html
+    assert "On air today" not in html
+
+
+def test_bots_resident_without_days(client: TestClient, freeze_today):
+    freeze_today(date(2026, 10, 26))
+    cards = resident_cards(client.get("/bots").text)
+    assert "Not on air yet" in cards["resident-05"]
+    assert 'class="led off"' in cards["resident-05"]
+
+
+def test_bots_has_no_last_played(client: TestClient):
+    assert "Last played" not in client.get("/bots").text
+
+
+def test_today_residents_before_todays_record(client: TestClient, freeze_today):
+    freeze_today(date(2026, 10, 27))
+    assert "On air today" not in client.get("/").text
 
 
 # ---- subscribe ---------------------------------------------------------------------

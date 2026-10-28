@@ -90,6 +90,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 def today_page(request: Request, store: StoreDep, subscribed: str | None = None):
     day = store.latest_day()
     recent = [d for d in store.list_days() if day is None or d.date != day.date][:4]
+    personas = store.personas()
     return render(
         request,
         "today.html",
@@ -98,7 +99,8 @@ def today_page(request: Request, store: StoreDep, subscribed: str | None = None)
         day=day,
         dj=store.persona(day.dj) if day else None,
         recent=recent,
-        personas=store.personas(),
+        personas=personas,
+        stats={p.id: store.resident_stats(p.id) for p in personas},
         subscribed=subscribed,
     )
 

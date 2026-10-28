@@ -98,12 +98,6 @@ def month_name(month: str) -> str:
     return _MONTHS[_parse_month(month)[1] - 1]
 
 
-def last_played_label(d: date | None, today: date) -> str:
-    if d is None:
-        return "—"
-    return "Today" if d == today else weekday_date(d)
-
-
 # --- durations --------------------------------------------------------------
 
 
@@ -199,6 +193,21 @@ def avatar_grid(persona_id: str) -> list[list[bool]]:
     """Deterministic 4×4 on/off pattern from a hash of the persona id."""
     bits = int(hashlib.sha256(persona_id.encode()).hexdigest(), 16)
     return [[bool(bits >> (row * 4 + col) & 1) for col in range(4)] for row in range(4)]
+
+
+@dataclass(frozen=True)
+class ResidentStatus:
+    label: str
+    on_air: bool
+
+
+def resident_status(last_aired: date | None, today: date) -> ResidentStatus:
+    """Resident card status from the persona's latest day; on air only if that day is today."""
+    if last_aired is None:
+        return ResidentStatus("Not on air yet", False)
+    if last_aired == today:
+        return ResidentStatus("On air today", True)
+    return ResidentStatus(f"Last aired on {weekday_date(last_aired)}", False)
 
 
 def persona_names(personas: Iterable[Persona]) -> dict[str, str]:

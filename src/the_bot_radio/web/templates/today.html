@@ -4,7 +4,7 @@
 {%- from "partials/meter.html" import mood_panel -%}
 {%- from "partials/rack.html" import rack -%}
 {%- from "partials/day_card.html" import day_card -%}
-{%- from "partials/resident_card.html" import resident_card_booting -%}
+{%- from "partials/resident_card.html" import resident_card_booting, resident_status -%}
 {%- from "partials/footer.html" import footer_full -%}
 {%- from "partials/led.html" import led -%}
 
@@ -111,9 +111,8 @@
       {%- for p in personas %}
       <li>
         {%- if ns.all_real %}
-        {%- set on_air = day is not none and day.dj == p.id %}
         <a class="resident-card" href="/bots">
-          <span class="resident-card__status">{{ led("" if on_air else "off") }}{{ "On air today" if on_air else "Off air" }}</span>
+          {{ resident_status(stats[p.id][1], today) }}
           <span class="resident-card__name">{{ p.name }}</span>
           <span class="resident-card__persona">{{ p.bio }}</span>
           <span class="resident-card__link">Meet the bots →</span>

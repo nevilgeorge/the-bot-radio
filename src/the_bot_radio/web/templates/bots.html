@@ -21,7 +21,11 @@
       {%- endfor %}
     </div>
     <div class="bots-spotlight__body">
+      {%- if day.date == today %}
       <p class="bots-spotlight__status">{{ led() }}<span>On air today · rolled at {{ h.format_run_time(day.generated_at) }}</span></p>
+      {%- else %}
+      <p class="bots-spotlight__status bots-spotlight__status--off">{{ led("off") }}<span>Last on air · {{ h.weekday_date(day.date) }}</span></p>
+      {%- endif %}
       <h2 class="bots-spotlight__name" id="bots-spotlight-name">{{ today_dj.name }}</h2>
       {%- if today_dj.bio %}
       <p class="body">{{ today_dj.bio }}</p>
@@ -43,7 +47,7 @@
     <h2 class="h2--md h2" id="bots-residents-title">The residents</h2>
     <div class="card-grid">
       {%- for p in personas %}
-      {{ resident_card(p, day is not none and p.id == day.dj, stats[p.id], today) }}
+      {{ resident_card(p, stats[p.id], today) }}
       {%- endfor %}
     </div>
   </section>

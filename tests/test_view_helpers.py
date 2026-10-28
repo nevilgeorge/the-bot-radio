@@ -172,11 +172,13 @@ def test_month_helpers():
     assert h.month_name("2026-12") == "December"
 
 
-def test_last_played_label():
+def test_resident_status():
     today = date(2026, 10, 26)
-    assert h.last_played_label(today, today) == "Today"
-    assert h.last_played_label(date(2026, 10, 25), today) == "SUN 10.25"
-    assert h.last_played_label(None, today) == "—"
+    assert h.resident_status(today, today) == h.ResidentStatus("On air today", True)
+    assert h.resident_status(date(2026, 10, 25), today) == h.ResidentStatus(
+        "Last aired on SUN 10.25", False
+    )
+    assert h.resident_status(None, today) == h.ResidentStatus("Not on air yet", False)
 
 
 # --- durations -----------------------------------------------------------------
