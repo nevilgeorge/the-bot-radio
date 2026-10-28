@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import tempfile
+import traceback
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
 from datetime import date, datetime
@@ -83,6 +84,41 @@ def update_diagnostics(artifact_dir: Path, **updates: Any) -> None:
     write_json_atomic(path, diagnostics)
 
 
+def redact_secrets(text: str) -> str:
+    """Remove environment credentials in plain and serialized forms from diagnostic text."""
+    secret_values = {
+        value
+        for key, value in os.environ.items()
+        if value and len(value) >= 6 and any(word in key for word in ("TOKEN", "KEY", "SECRET"))
+    }
+    secret_forms = {
+        form
+        for secret in secret_values
+        for form in (
+            secret,
+            json.dumps(secret, ensure_ascii=False)[1:-1],
+            json.dumps(secret, ensure_ascii=True)[1:-1],
+            repr(secret)[1:-1],
+        )
+    }
+    for secret in sorted(secret_forms, key=len, reverse=True):
+        text = text.replace(secret, "[REDACTED]")
+    return text
+
+
+def error_details(error: BaseException, phase: str) -> dict[str, str]:
+    """Describe a failure and its exception chain without retaining frame local variables."""
+    formatted_traceback = "".join(
+        traceback.TracebackException.from_exception(error, capture_locals=False).format()
+    )
+    return {
+        "error_type": type(error).__name__,
+        "error_message": redact_secrets(str(error)),
+        "error_traceback": redact_secrets(formatted_traceback),
+        "phase": phase,
+    }
+
+
 class LogTranscript:
     """Append JSONL events with environment credential values redacted."""
 
@@ -91,17 +127,11 @@ class LogTranscript:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.console = console
-        self.secrets = [
-            value
-            for key, value in os.environ.items()
-            if value and len(value) >= 6 and any(word in key for word in ("TOKEN", "KEY", "SECRET"))
-        ]
 
     def append(self, event: dict[str, Any]) -> None:
         """Write one normalized event without serializing clients or process environments."""
         encoded = json.dumps(json_value(event), ensure_ascii=False)
-        for secret in self.secrets:
-            encoded = encoded.replace(json.dumps(secret)[1:-1], "[REDACTED]")
+        encoded = redact_secrets(encoded)
         with self.path.open("a", encoding="utf-8") as output_file:
             output_file.write(encoded + "\n")
         if self.console is not None:

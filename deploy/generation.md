@@ -63,12 +63,14 @@ Linux X86_64, platform 1.4.0, and 20 GiB ephemeral disk. There is no ECS service
 5. Run the manual help task below. Verify exit code zero and CloudWatch output. This
    exercises image pull, secret injection and non-root application startup without paid
    API calls. The image release checks UID 10001, writable home/data/workspace, bundled
-   Linux Claude CLI startup, and the absence of local datasets and credentials.
+   Linux Claude CLI startup, the required packaged inputs, and the absence of credentials.
 
-6. Stop here. Do not enable the schedule until S3 input/output integration, durable
-   duplicate protection, and an end-to-end generation check are completed separately.
-   `/work/data` is currently empty and ephemeral; scheduled generation cannot yet use
-   the required permanent input files or persist accepted output.
+6. Keep scheduling disabled until an end-to-end generation check passes. The image includes
+   `personas.json` and `shared_catalog.jsonl` through the installed
+   `the_bot_radio.resources` package. Rebuild and release when these resources change.
+   `/work/data` starts empty and is reserved for writable runtime storage.
+   Daily records and run artifacts use the configured S3 location; run workspaces remain
+   ephemeral. Existing daily records, previous runs, and credentials are excluded from images.
 
 ## One-off remote generator
 
@@ -102,8 +104,8 @@ ARN and leaves the job running for inspection. Logs can lag by several seconds.
 Paths such as `--data-dir` refer to the **container filesystem**. Local files and environment
 variables such as `RUN_DATE` are not uploaded; pass `--date` explicitly. The deployed task
 uses the managed data bucket's `production` prefix for daily records and run artifacts.
-Personas, input descriptions, and the catalog must still be available inside the image;
-local run workspaces use temporary container storage. This script does not change the schedule.
+Personas and the catalog come from the installed package; input descriptions are not used
+by the generator. Local run workspaces use temporary container storage. This script does not change the schedule.
 
 To inspect a task independently, use its printed ARN and Terraform's
 `generation_cluster_arn` and `generation_log_group_name` outputs:
@@ -145,6 +147,12 @@ in 14 days. CloudWatch stdout/stderr logs expire in 30 days. For task failures i
 `generator/generator/TASK-ID`. Missing logs often indicate image pull or secret injection
 failed before startup; verify the digest, `AWSCURRENT` keys, execution permissions, and
 public-IP/subnet routes. No inbound security rules are needed.
+
+Application failures include `error_type`, `error_message`, `error_traceback`, and `phase`
+in `diagnostics.json`. Tracebacks include exception causes without local variables;
+environment credential values are redacted. The CLI also prints the redacted failure reason.
+A `preparation` failure reporting `shared catalog is missing or empty` means the image
+is missing its packaged resources; rebuild and deploy the corrected image before retrying.
 
 Roll back by restoring the previous `generation_image_uri` digest and applying Terraform,
 keeping scheduling disabled. Tagged ECR releases are retained; only untagged images older

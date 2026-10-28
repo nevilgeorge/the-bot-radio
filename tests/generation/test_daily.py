@@ -378,6 +378,9 @@ async def test_provider_failure_records_outcome_without_a_daily_file(generation_
     diagnostics = json.loads(diagnostics_path.read_text())
     assert diagnostics["status"] == "failed"
     assert diagnostics["error_type"] == "RuntimeError"
+    assert diagnostics["error_message"] == "generation failed"
+    assert diagnostics["phase"] == "agent"
+    assert "RuntimeError: generation failed" in diagnostics["error_traceback"]
     assert diagnostics["date"] == RUN_DATE.isoformat()
     assert diagnostics["inputs"][1]["raw"] == {"forecast": "rain"}
     assert not diagnostics_path.with_name("proposal.json").exists()
@@ -944,7 +947,8 @@ async def test_cancellation_before_commit_archives_agent_evidence(generation_ser
 
 
 def test_cli_failure_reports_controlled_recovery_context(monkeypatch, capsys):
-    failure = RuntimeError("provider payload secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "provider-secret-value")
+    failure = RuntimeError("provider failure: provider-secret-value")
     failure.add_note(
         "Run recovery: run_id=original; staging_directory=/retained; committed_location=memory://day"
     )
@@ -955,7 +959,63 @@ def test_cli_failure_reports_controlled_recovery_context(monkeypatch, capsys):
     assert output.out == ""
     assert "committed_location=memory://day" in output.err
     assert "staging_directory=/retained" in output.err
-    assert "secret" not in output.err
+    assert "provider failure: [REDACTED]" in output.err
+    assert "provider-secret-value" not in output.err
+    assert "arbitrary provider secret" not in output.err
+
+
+async def test_missing_catalog_reports_preparation_failure(generation_services):
+    """Early setup failures retain the actual reason before any input or agent calls."""
+    services = generation_services
+    (services.data_dir / "shared_catalog.jsonl").unlink()
+    with pytest.raises(ValueError, match="shared catalog is missing or empty"):
+        await generate(services)
+    [diagnostics_path] = (services.data_dir / "runs/2026-10-27").glob("*/diagnostics.json")
+    diagnostics = json.loads(diagnostics_path.read_text())
+    assert diagnostics["phase"] == "preparation"
+    assert diagnostics["error_message"] == "shared catalog is missing or empty"
+    assert "preparation.py" in diagnostics["error_traceback"]
+    services.claude.score_mood.assert_not_awaited()
+    services.agent.run.assert_not_awaited()
+
+
+async def test_failure_artifacts_redact_exception_chain_and_console(
+    generation_services, monkeypatch, capsys
+):
+    """Failure messages and chained traceback retain context without credential values."""
+    services = generation_services
+    secret = 'provider-"credential\\with\nnewline'
+    monkeypatch.setenv("SPOTIFY_REFRESH_TOKEN", secret)
+
+    async def fail_preparation(*args: Any, **kwargs: Any) -> PreparedRun:
+        """Include plain and JSON-escaped credentials in both exception levels."""
+        try:
+            raise RuntimeError(f"provider rejected {json.dumps(secret)}")
+        except RuntimeError as cause:
+            raise ValueError(f"input setup failed: {secret}") from cause
+
+    monkeypatch.setattr(daily, "prepare_run", fail_preparation)
+    with pytest.raises(ValueError, match="input setup failed"):
+        await daily.generate_day(
+            RUN_DATE,
+            **local_dependencies(services.data_dir),
+            now=NOW,
+            claude_service=services.claude,
+            spotify_service=services.spotify,
+            playlist_agent=services.agent,
+            verbose=True,
+        )
+    [diagnostics_path] = (services.data_dir / "runs/2026-10-27").glob("*/diagnostics.json")
+    diagnostics = json.loads(diagnostics_path.read_text())
+    assert diagnostics["error_message"] == "input setup failed: [REDACTED]"
+    assert "RuntimeError: provider rejected" in diagnostics["error_traceback"]
+    assert "direct cause" in diagnostics["error_traceback"]
+    assert "ValueError: input setup failed: [REDACTED]" in diagnostics["error_traceback"]
+    transcript = diagnostics_path.with_name("transcript.jsonl").read_text()
+    console = capsys.readouterr().err
+    for output in (diagnostics_path.read_text(), transcript, console):
+        assert secret not in output
+        assert json.dumps(secret)[1:-1] not in output
 
 
 async def test_skip_artifact_failure_retains_local_failed_outcome(generation_services, monkeypatch):

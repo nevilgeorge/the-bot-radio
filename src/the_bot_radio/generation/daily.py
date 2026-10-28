@@ -23,6 +23,8 @@ from the_bot_radio.generation.preparation import PreparedRun, prepare_run
 from the_bot_radio.generation.runtime import (
     AgentLimits,
     RunRecorder,
+    error_details,
+    redact_secrets,
     update_diagnostics,
     write_json_atomic,
 )
@@ -97,6 +99,7 @@ async def generate_day(
     status = "failed"
     outcome: dict[str, object] = {}
     primary_error: BaseException | None = None
+    phase = "initialization"
 
     async def reconcile(content: bytes) -> bool:
         """Check an ambiguous write once without retrying canonical creation."""
@@ -116,12 +119,14 @@ async def generate_day(
     try:
         await recorder.start(now=now, model=model, daily_file=location, run_id=run_id)
         started = True
+        phase = "check_existing"
         existing = await daily_store.read(run_date)
         if existing is not None:
             validate_existing_record(existing, run_date)
             status = "skipped"
             outcome["reason"] = "existing_daily_record"
         else:
+            phase = "preparation"
             async with make_http_client() as http_client:
                 claude_service = claude_service or ClaudeService()
                 spotify_service = spotify_service or SpotifyService(http_client)
@@ -140,6 +145,7 @@ async def generate_day(
                 playlist_agent = playlist_agent or PlaylistAgent(
                     spotify_service, PlaylistValidator(prepared.context)
                 )
+                phase = "agent"
                 result = await playlist_agent.run(
                     workspace=prepared.workspace,
                     prompt=prepared.prompt,
@@ -150,6 +156,7 @@ async def generate_day(
                         local_run_dir / "proposal.json", proposal
                     ),
                 )
+                phase = "validation"
                 record = assemble_daily_record(
                     result.proposal,
                     prepared.context,
@@ -162,6 +169,7 @@ async def generate_day(
                     local_run_dir / "search_results.json", prepared.context.search_results
                 )
                 await recorder.checkpoint()
+                phase = "commit"
                 try:
                     location = await daily_store.create(run_date, content)
                 except RecordExists:
@@ -191,7 +199,7 @@ async def generate_day(
                     status = "accepted"
     except BaseException as error:
         primary_error = error
-        outcome["error_type"] = type(error).__name__
+        outcome.update(error_details(error, phase))
     finally:
         # A partial workspace is included by finish even if preparation never returned.
         if prepared is not None:
@@ -202,7 +210,7 @@ async def generate_day(
             except BaseException as error:
                 if primary_error is None:
                     primary_error = error
-                    outcome["error_type"] = type(error).__name__
+                    outcome.update(error_details(error, "finalization"))
                 else:
                     primary_error.add_note(
                         f"Search evidence archival failed: {type(error).__name__}"
@@ -226,13 +234,13 @@ async def generate_day(
                     # Keep the local snapshot recoverable even after finish closed.
                     try:
                         update_diagnostics(
-                            local_run_dir, status="failed", error_type=type(error).__name__
+                            local_run_dir, status="failed", **error_details(error, "finalization")
                         )
                         recorder.transcript.append(
                             {
                                 "event": "finalization_failed",
                                 "status": "failed",
-                                "error_type": type(error).__name__,
+                                **error_details(error, "finalization"),
                             }
                         )
                     except BaseException as local_error:
@@ -304,10 +312,14 @@ def main(argv: list[str] | None = None) -> int:
 
         path = asyncio.run(run_generation())
     except (Exception, KeyboardInterrupt) as error:
-        print(f"Generation failed ({type(error).__name__}); see run artifacts.", file=sys.stderr)
+        message = redact_secrets(str(error))
+        print(
+            f"Generation failed ({type(error).__name__}): {message}; see run artifacts.",
+            file=sys.stderr,
+        )
         for note in getattr(error, "__notes__", ()):
             if note.startswith("Run recovery:"):
-                print(note, file=sys.stderr)
+                print(redact_secrets(note), file=sys.stderr)
         return 1
     print(path)
     return 0

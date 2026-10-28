@@ -1,5 +1,6 @@
 """Exercise image releases without Docker, AWS credentials, or network access."""
 
+import importlib.util
 import json
 import os
 import shutil
@@ -50,6 +51,10 @@ def release_environment(tmp_path: Path) -> dict[str, str]:
     deploy_path.mkdir(parents=True)
     for filename in ("release-generator.sh", "smoke-generator.py", "Dockerfile.generator"):
         shutil.copyfile(REPOSITORY_ROOT / "deploy" / filename, deploy_path / filename)
+    data_path = repository_path / "src" / "the_bot_radio" / "resources"
+    data_path.mkdir(parents=True)
+    for filename in ("personas.json", "shared_catalog.jsonl"):
+        (data_path / filename).write_text("fixture runtime input")
     bin_path = tmp_path / "bin"
     bin_path.mkdir()
     for executable_name in ("terraform", "aws", "docker", "git"):
@@ -161,3 +166,75 @@ def test_release_rejects_wrong_repository(release_environment: dict[str, str]) -
     result = run_release(release_environment)
     assert result.returncode != 0
     assert not any(command[0] == "aws" for command in read_commands(release_environment))
+
+
+@pytest.mark.parametrize("invalid_kind", ["missing", "empty", "symlink"])
+def test_release_rejects_unavailable_runtime_inputs_before_aws(
+    release_environment: dict[str, str], invalid_kind: str
+) -> None:
+    """Missing or linked runtime inputs cannot produce a published broken image."""
+    repository = Path(release_environment["RELEASE_TEST_SCRIPT"]).parents[1]
+    catalog_path = repository / "src" / "the_bot_radio" / "resources" / "shared_catalog.jsonl"
+    if invalid_kind == "missing":
+        catalog_path.unlink()
+    elif invalid_kind == "empty":
+        catalog_path.write_text("")
+    else:
+        catalog_path.unlink()
+        catalog_path.symlink_to(catalog_path.with_name("personas.json"))
+    result = run_release(release_environment)
+    assert result.returncode != 0
+    assert "shared_catalog.jsonl" in result.stderr
+    assert not Path(release_environment["RELEASE_TEST_LOG"]).exists()
+
+
+def test_image_smoke_validates_runtime_snapshots(tmp_path: Path) -> None:
+    """The real snapshot validation accepts approved inputs and rejects extra state."""
+    specification = importlib.util.spec_from_file_location(
+        "generator_smoke", REPOSITORY_ROOT / "deploy" / "smoke-generator.py"
+    )
+    assert specification is not None and specification.loader is not None
+    smoke_module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(smoke_module)
+    write_smoke_inputs(tmp_path)
+    smoke_module.validate_packaged_resources(tmp_path)
+    (tmp_path / "days").mkdir()
+    with pytest.raises(AssertionError):
+        smoke_module.validate_packaged_resources(tmp_path)
+
+
+def test_image_smoke_rejects_empty_catalog(tmp_path: Path) -> None:
+    """An empty catalog still fails the image's readiness check."""
+    specification = importlib.util.spec_from_file_location(
+        "generator_smoke", REPOSITORY_ROOT / "deploy" / "smoke-generator.py"
+    )
+    assert specification is not None and specification.loader is not None
+    smoke_module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(smoke_module)
+    write_smoke_inputs(tmp_path)
+    (tmp_path / "shared_catalog.jsonl").write_text("")
+    with pytest.raises(AssertionError):
+        smoke_module.validate_packaged_resources(tmp_path)
+
+
+def write_smoke_inputs(data_directory: Path) -> None:
+    """Build an offline catalog independent of the packaged catalog contents."""
+    for filename in ("personas.json",):
+        shutil.copyfile(
+            REPOSITORY_ROOT / "src" / "the_bot_radio" / "resources" / filename,
+            data_directory / filename,
+        )
+    records = [
+        {
+            "spotify_id": f"{index:022d}",
+            "title": f"Track {index}",
+            "artists": [f"Artist {index}"],
+            "album": "Test album",
+            "duration_ms": 180000,
+            "spotify_url": f"https://open.spotify.com/track/{index:022d}",
+        }
+        for index in range(5)
+    ]
+    (data_directory / "shared_catalog.jsonl").write_text(
+        "".join(json.dumps(record) + "\n" for record in records)
+    )

@@ -1,4 +1,4 @@
-# Only build metadata and application source may enter the build context.
+# Only build metadata and application source, including packaged resources, enter the context.
 **
 !pyproject.toml
 !uv.lock

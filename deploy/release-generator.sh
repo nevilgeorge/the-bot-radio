@@ -13,6 +13,19 @@ fi
 for executable in terraform aws docker git python3; do
   command -v "$executable" >/dev/null || { echo "Missing executable: $executable" >&2; exit 1; }
 done
+# Fail before authentication or build if a packaged runtime resource is unavailable.
+python3 - "$repository_root/src/the_bot_radio/resources" <<'PY'
+import sys
+from pathlib import Path
+
+resources_directory = Path(sys.argv[1])
+if resources_directory.is_symlink():
+    raise SystemExit("Generator resources directory must not be a symlink")
+for filename in ("personas.json", "shared_catalog.jsonl"):
+    input_path = resources_directory / filename
+    if input_path.is_symlink() or not input_path.is_file() or input_path.stat().st_size == 0:
+        raise SystemExit(f"Generator packaged resource must be a nonempty regular file: {filename}")
+PY
 work_dir="$(mktemp -d "${TMPDIR:-/tmp}/the-bot-radio-image.XXXXXXXX")"
 trap 'rm -rf -- "$work_dir"' EXIT
 terraform -chdir="$repository_root/terraform" output -json > "$work_dir/outputs.json"
