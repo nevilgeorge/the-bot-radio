@@ -1,0 +1,84 @@
+{#- "How it really works": an easter-egg <details> under the About page's steps.
+    Opens/closes without JS; static/js/under-hood.js adds the Close button and the #under-the-hood deep link. -#}
+{%- set rules = [
+  "10 tracks: 5 from the crate, 5 wildcards",
+  "Nothing played in the last 30 days",
+  "Stay in character",
+] -%}
+{%- set humans = [
+  "Built the shared crate",
+  "Wrote the seven DJ personas",
+  "Set the station rules",
+  "Built this website",
+] -%}
+{%- set bot = [
+  "Picks every track",
+  "Finds the wildcards",
+  "Names the playlist",
+  "Writes every word of the liner notes",
+] -%}
+<details class="under-hood" id="under-the-hood">
+  <summary class="under-hood__toggle">
+    <span class="under-hood__psst" aria-hidden="true">psst —</span>
+    <span class="under-hood__label under-hood__label--closed">How it really works ↓</span>
+    <span class="under-hood__label under-hood__label--open">Close the hood ↑</span>
+  </summary>
+  <div class="under-hood__panel">
+    <div class="under-hood__head">
+      <div class="under-hood__intro">
+        <p class="kicker under-hood__kicker"><span class="led" aria-hidden="true"></span>Under the hood</p>
+        <h3 class="under-hood__title">Inside the booth</h3>
+        <p class="under-hood__lede">Every playlist here is picked and written by an AI agent, started by a scheduled job at 06:00 ET. No person chooses a song or writes a liner note. Here's the whole machine.</p>
+      </div>
+      <button type="button" class="btn btn--secondary under-hood__close" hidden>Close ↑</button>
+    </div>
+
+    <div class="under-hood__grid">
+      <div class="under-hood__cell">
+        <span class="under-hood__cell-label">The agent</span>
+        <h4 class="under-hood__cell-title">One model, seven personalities</h4>
+        <p class="under-hood__text">Each DJ is the same AI model with a different brief: who they are, how they pick and sequence, how they talk. First, the eight readings are turned into a mood (tempo, energy, brightness, obscurity). Then today's DJ gets the readings, the mood and the last 30 days of playlists, and works on its own (searching, drafting, checking, fixing) until it has a playlist.</p>
+      </div>
+      <div class="under-hood__cell">
+        <span class="under-hood__cell-label">The crate</span>
+        <h4 class="under-hood__cell-title">One shared crate</h4>
+        <p class="under-hood__text">All the DJs dig through the same crate: about 3,500 tracks, each track with descriptions of how it sounds. Half of every playlist comes from the crate. The other half are wildcards the DJ finds on Spotify.</p>
+      </div>
+      <div class="under-hood__cell">
+        <span class="under-hood__cell-label">The tools</span>
+        <h4 class="under-hood__cell-title">What it's allowed to touch</h4>
+        <p class="under-hood__text">It can read files, search Spotify, find similar tracks, get audio features, and validate a proposed playlist.</p>
+        <p class="under-hood__note">It can't write files, run commands, browse the web or publish anything. Code creates the playlist, after checking the DJ's work.</p>
+      </div>
+      <div class="under-hood__cell">
+        <span class="under-hood__cell-label">The rules</span>
+        <h4 class="under-hood__cell-title">Check, fix, repeat</h4>
+        <ul class="under-hood__rules">
+          {%- for rule in rules %}
+          <li>{{ rule }}</li>
+          {%- endfor %}
+        </ul>
+        <p class="under-hood__note">The DJ can test drafts as often as it likes. Code ensures the DJ follows the rules.</p>
+      </div>
+    </div>
+
+    <div class="under-hood__grid">
+      <div class="under-hood__cell under-hood__cell--split">
+        <span class="under-hood__cell-label under-hood__cell-label--dim" id="under-hood-humans">Humans did</span>
+        <ul class="under-hood__list" aria-labelledby="under-hood-humans">
+          {%- for item in humans %}
+          <li>{{ item }}</li>
+          {%- endfor %}
+        </ul>
+      </div>
+      <div class="under-hood__cell under-hood__cell--split">
+        <span class="under-hood__cell-label" id="under-hood-bot">The bot does, every day</span>
+        <ul class="under-hood__list under-hood__list--bot" aria-labelledby="under-hood-bot">
+          {%- for item in bot %}
+          <li>{{ item }}</li>
+          {%- endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</details>

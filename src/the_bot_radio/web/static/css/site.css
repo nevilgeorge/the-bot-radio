@@ -2271,6 +2271,191 @@ a.resident-card:hover .resident-card__link {
   text-transform: uppercase;
 }
 
+/* "How it really works": easter-egg <details> under the steps */
+.under-hood > summary {
+  list-style: none;
+}
+
+.under-hood > summary::-webkit-details-marker {
+  display: none;
+}
+
+.under-hood__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.under-hood__toggle:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+}
+
+.under-hood__psst {
+  color: var(--text-3);
+}
+
+.under-hood__label {
+  color: var(--text);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: underline dotted;
+  text-underline-offset: 4px;
+}
+
+.under-hood__toggle:hover .under-hood__label {
+  color: var(--green);
+}
+
+.under-hood[open] .under-hood__label--closed,
+.under-hood:not([open]) .under-hood__label--open {
+  display: none;
+}
+
+.under-hood__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  margin-top: 12px;
+  padding: 32px;
+  border: 1px solid var(--green);
+  border-radius: var(--radius-card);
+  background: var(--bg-sunken);
+}
+
+.under-hood__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px 40px;
+}
+
+.under-hood__intro {
+  flex: 999 1 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.under-hood__kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.under-hood__title {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 56px;
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+.under-hood__lede {
+  max-width: 680px;
+  font-size: 17px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.under-hood__close {
+  min-height: 44px;
+  padding: 0 18px;
+  font-size: 13px;
+}
+
+/* Shared-hairline grid, like .about-steps */
+.under-hood__grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-art);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.under-hood__cell {
+  flex: 1 1 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 24px;
+  background: var(--bg-raised);
+}
+
+.under-hood__cell--split {
+  flex-basis: 300px;
+  gap: 8px;
+  padding: 20px 24px;
+}
+
+.under-hood__cell-label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+
+.under-hood__cell-label--dim {
+  color: var(--text-3);
+}
+
+.under-hood__cell-title {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 30px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.under-hood__text {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.under-hood__note {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--amber);
+}
+
+.under-hood__rules,
+.under-hood__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.under-hood__rules li {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+  font-size: 15px;
+  color: var(--text-2);
+}
+
+.under-hood__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+  color: var(--text-2);
+}
+
+.under-hood__list--bot {
+  color: var(--text);
+}
+
 /* Credits: homage text + Data sources table */
 .about-credits {
   flex-direction: row;
@@ -2315,6 +2500,18 @@ a.resident-card:hover .resident-card__link {
   }
 
   .about-step {
+    padding: 20px;
+  }
+
+  .under-hood__panel {
+    padding: 20px;
+  }
+
+  .under-hood__title {
+    font-size: 40px;
+  }
+
+  .under-hood__cell {
     padding: 20px;
   }
 

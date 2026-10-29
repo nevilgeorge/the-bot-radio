@@ -42,6 +42,7 @@
       </li>
       {%- endfor %}
     </ol>
+    {% include "partials/under_the_hood.html" %}
   </section>
 
   <section class="about-section about-section--ruled about-credits" aria-labelledby="about-homage-title">
@@ -74,4 +75,8 @@
     </div>
   </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/under-hood.js" defer></script>
 {% endblock %}

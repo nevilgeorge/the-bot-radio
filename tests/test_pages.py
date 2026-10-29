@@ -423,3 +423,21 @@ def test_today_has_no_newsletter_footer(client: TestClient):
     assert "Get the drop in your inbox" not in html
     assert 'action="/subscribe"' not in html
     assert client.post("/subscribe", data={"email": "dj@example.com"}).status_code in (404, 405)
+
+
+def test_about_under_the_hood_panel(client: TestClient):
+    html = client.get("/about").text
+    details = re.search(r'<details class="under-hood" id="under-the-hood"([^>]*)>', html)
+    assert details is not None
+    assert "open" not in details.group(1)  # closed by default
+    assert "How it really works ↓" in html
+    assert "Close the hood ↑" in html
+    for label in ["The agent", "The crate", "The tools", "The rules"]:
+        assert f'<span class="under-hood__cell-label">{label}</span>' in html
+    assert "search Spotify, find similar tracks, get audio features" in html
+    rules = re.findall(r"<ul class=\"under-hood__rules\">(.*?)</ul>", html, re.S)
+    assert len(re.findall(r"<li>", rules[0])) == 3
+    assert "Humans did" in html
+    assert "The bot does, every day" in html
+    assert re.search(r'<button[^>]*class="[^"]*under-hood__close[^"]*"[^>]*hidden', html)
+    assert '<script src="/static/js/under-hood.js" defer></script>' in html
