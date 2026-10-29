@@ -9,6 +9,26 @@ validated daily playlist JSON and automatically publishes each accepted playlist
 serves published records and legacy fixtures from local files or an optional S3 memory cache;
 pending generations stay hidden.
 
+## Architecture
+
+```mermaid
+flowchart TD
+    Inputs[Neighborhood input services] --> Generation[Daily generation job]
+    Resources[Resident personas and shared catalog] --> Generation
+    History[Published playlist history] --> Generation
+    Generation --> Mood[ClaudeService mood scoring]
+    Mood --> Agent[PlaylistAgent / Claude Agent SDK]
+    Generation --> Agent
+    Agent <-->|Track search| Spotify[Spotify Web API]
+    Agent <-->|Optional audio features and recommendations| ReccoBeats[ReccoBeats API]
+    Agent <-->|Proposal validation| Validator[PlaylistValidator]
+    Agent --> Assembly[Assemble and validate daily record]
+    Assembly --> Publication[Publish and verify playlist]
+    Publication --> Spotify
+    Publication --> Storage[Local files or S3: daily records and run artifacts]
+    Storage -->|Published daily records| Website[FastAPI + Jinja2 website]
+```
+
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/)
