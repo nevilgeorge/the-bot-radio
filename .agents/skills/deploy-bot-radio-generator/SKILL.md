@@ -7,8 +7,9 @@ description: Redeploy The Bot Radio daily generator by building and pushing its 
 
 Complete an authorized generator redeployment through remote smoke verification. Creating or
 editing this skill does not authorize a deployment. A request to deploy authorizes the normal
-image push, configuration edit, reviewed Terraform apply, and help task; do not ask again for
-routine steps already authorized. Honor tool approval requirements and stop for changes outside
+image push, configuration edit, reviewed Terraform apply, help task, and restoration of a
+schedule paused for this rollout after successful verification; do not ask again for routine
+steps already authorized. Honor tool approval requirements and stop for changes outside
 that scope. A request for instructions alone calls for a walkthrough.
 
 ## Establish the release
@@ -46,11 +47,12 @@ Never create a new backend or cloud foundation as part of a routine redeployment
 
 ## Build and deploy
 
-Keep an already disabled schedule disabled. If scheduling is enabled, disable it through a
-reviewed Terraform plan/apply before rollout; remember its previous state and explain the pause
-and conditions for restoring it before mutation. If this would skip an
-imminent run, surface the timing decision before proceeding. Enabling a previously disabled
-schedule requires an explicit user request; a redeploy alone does not authorize it.
+Record the schedule state before rollout. Keep a schedule that was already disabled
+disabled. If scheduling is enabled, pause it through a reviewed Terraform plan/apply before
+rollout and explain that it will be restored after the deployed help smoke test passes. If
+this would skip an imminent run, surface the timing decision before proceeding. Enabling a
+schedule that was disabled before rollout requires an explicit user request; restoring one
+paused for this rollout is part of the authorized deployment.
 
 Run:
 
@@ -108,10 +110,14 @@ requested, using today's New York date by default (omit `--date`). An old `--dat
 weather/transit/bike readings with date-derived or historical inputs and is not a faithful
 historical replay. Never describe a backdated run as a harmless smoke test.
 
-Keep a previously disabled schedule disabled after smoke verification. Before restoring an
-enabled schedule or enabling one at the user's request, follow the repository's end-to-end
-verification requirement; obtain authorization for any needed real generation. The configured
-schedule is 06:00 America/New_York. Verify actual Scheduler state after any schedule apply.
+After the deployed help smoke test passes and the new image digest and Scheduler target
+are verified, restore a schedule that was enabled before rollout unless the user asked to
+leave it paused. Set `generation_schedule_enabled = true`, review a new saved Terraform plan
+that changes only the schedule state, and apply that plan. Do not ask for additional
+confirmation or require another real generation to restore the schedule, including when
+today's playlist has already been generated. A schedule that was disabled before rollout
+stays disabled unless the user explicitly requests enabling it. The configured schedule is
+06:00 America/New_York. Verify actual Scheduler state and target after the schedule apply.
 
 On a failed apply or smoke test, inspect actual deployed state and keep scheduling disabled.
 Do not loop on real generation, stop tasks automatically, or claim rollback occurred. If rollback
