@@ -1,8 +1,8 @@
 # Shared catalog feature collection
 
 `scripts/collect_song_features.py` imports Spotify playlist tracks and enriches them with
-ReccoBeats audio features. `ReccoBeatsClient` lives inside the script; Spotify requests use
-the existing `SpotifyService`.
+ReccoBeats audio features through the shared `ReccobeatsService`; Spotify requests use
+the existing `SpotifyService`. The script owns feature-row conversion and catalog persistence.
 This is an offline curation tool, not part of the daily generation job. It does not call Claude
 or assign tracks to residents.
 
@@ -65,14 +65,30 @@ Playlist or provider request failures produce a nonzero exit after available pro
 
 ## ReccoBeats details
 
-Use `GET https://api.reccobeats.com/v1/audio-features?ids=...`, in batches of 20.
+The collector uses `GET https://api.reccobeats.com/v1/audio-features?ids=...`, in batches of 20
+(the shared service supports up to 40 IDs per feature request).
 Match results to Spotify IDs through `href`; the response `id` is a ReccoBeats UUID and
 response order is not a reliable join key. Retain tempo, energy, valence, danceability,
 acousticness, instrumentalness, liveness, loudness and speechiness on their source scales.
 
 ReccoBeats requests are paced to at most one request per second, with up to three attempts for
-transient errors and support for `Retry-After`. Access failures stop further feature requests
-for the remainder of the run, preserving imported metadata and completed results.
+transient errors and support for numeric and HTTP-date `Retry-After`. Cooldowns persist
+after exhausted retries. The caller owns the injected HTTP client's lifecycle; the shared
+service serializes pacing across audio-feature and recommendation calls. Access failures
+stop further feature requests for the remainder of the run, preserving imported metadata
+and completed results.
+
+The shared service also supports validated recommendation requests, returning provider track
+metadata with `negativeSeeds` set to an empty list, which httpx omits from the query.
+The collector only fetches audio features; it
+does not request recommendations or register agent tools. An audio-feature 404 is empty
+coverage; malformed identified rows are isolated, and unidentified rows mark unresolved IDs
+as errors rather than definitive missing coverage. Provider errors omit request URLs and bodies.
+
+On 2026-10-29, a read-only provider check rejected explicit `negativeSeeds=` with HTTP 400
+(the provider required 1–5 values). Omitting the parameter succeeded; using an empty list
+produces that encoding without supplying negative seeds. Capture details are in
+[`tests/services/fixtures/reccobeats/README.md`](../tests/services/fixtures/reccobeats/README.md).
 
 References: [ReccoBeats audio features](https://reccobeats.com/docs/apis/get-audio-features),
 [ReccoBeats rate limits](https://reccobeats.com/docs/documentation/rate-limiting).

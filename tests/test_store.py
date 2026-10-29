@@ -8,8 +8,6 @@ import pytest
 
 from the_bot_radio.web.store import Store
 
-REPO_DATA = Path(__file__).resolve().parents[1] / "data"
-
 
 def make_day(d: str, dj: str = "resident-01", title: str = "A day") -> dict:
     return {
@@ -188,8 +186,8 @@ def test_hot_reload(data_dir: Path):
     assert store.latest_day().date == date(2026, 10, 2)
 
 
-def test_real_data_dir_validates(caplog: pytest.LogCaptureFixture):
-    store = Store(REPO_DATA)
+def test_real_data_dir_validates(caplog: pytest.LogCaptureFixture, site_data_dir: Path):
+    store = Store(site_data_dir)
     with caplog.at_level(logging.WARNING, logger="the_bot_radio.web.store"):
         days = store.list_days()
     assert not caplog.records

@@ -1,21 +1,26 @@
-# Daily playlist agent loop
+# Daily playlist agent harness
 
-The agent loop produces a daily JSON file describing an ordered, 10-track playlist based on
-inputs from Greenpoint, Brooklyn, guided by the selected resident DJ's taste. Deterministic
-code outside the agent loop reads this file and creates the Spotify playlist.
+This document describes the current implementation in `src/the_bot_radio/generation/`.
+The agent returns a structured creative proposal for an ordered, 10-track playlist based on
+Greenpoint, Brooklyn inputs and the selected resident DJ's taste. The same generation job
+validates the proposal, publishes and verifies a public Spotify playlist outside the agent
+session, archives the published daily record, and replaces the canonical daily record.
+ReccoBeats recommendations are not currently part of the harness.
 
 ## Expected inputs
 
 ### Run context
 
 - Run date and timezone-aware run timestamp, using `America/New_York`.
-- Selected DJ ID from the date-seeded DJ roll, plus the persona's name, bio, taste prompt,
+- Selected DJ ID from the date-seeded DJ roll, plus the persona's name, bio,
   and the authored `agent_instructions` and `speaking_voice`. Musical guidance remains
   agent judgment; no additional machine-enforced genre restrictions are defined.
 
 ### Neighborhood readings
 
-Readings come from `services.inputs.runner.read_all()`, in display order:
+Preparation rolls the DJ against published history, then collects the remaining readings
+through `services.inputs.runner.read_all()`. The combined readings are in display order;
+the table describes audit data (the agent prompt receives only the selected DJ ID for DJ roll):
 
 | Reading | Expected information |
 | --- | --- |
@@ -63,12 +68,13 @@ historical conditions.
 ## Files available to the agent
 
 Paths below are relative to the run's agent-readable `workspace/`. The source catalog stays
-at `data/shared_catalog.jsonl`, with source playlists in `data/days/`. The run context and selected persona
-are supplied in the initial user prompt as JSON under `inputs` and `persona`. The context includes
+at `src/the_bot_radio/resources/shared_catalog.jsonl`; published history comes from the
+configured `DailyRecordStore` (local `data/days/` or S3 `<prefix>/days/`).
+The run context and selected persona are supplied in the initial user prompt as JSON under `inputs` and `persona`. The context includes
 the run date, timezone-aware timestamp, timezone, selected DJ ID, mood, history coverage, and
-normalized readings with status and fetch time; raw payloads and errors are excluded.
-The proposal schema is prepared by the implementation. Prepare a fixed snapshot of the inputs before starting the
-loop so it works from consistent evidence throughout selection and revision.
+normalized readings with status and fetch time; raw payloads and errors are excluded from
+that prompt. Preparation freezes the catalog/history and writes the proposal schema before
+starting the agent. Archived published history files retain their full original payloads.
 
 | File | Purpose |
 | --- | --- |
@@ -78,12 +84,12 @@ loop so it works from consistent evidence throughout selection and revision.
 
 The history window is `run_date - 30 days <= playlist date < run_date`, using New York dates.
 Only successfully published playlists count toward the repeat rule; pending generations
-and placeholder fixture records do not. Missing days are allowed, but the run context should
-record which dates were found and whether history is known to be incomplete.
+and placeholder fixture records do not. Missing days are allowed; the run context records included, missing, and excluded dates
+and whether history is incomplete.
 
-Deterministic setup reads `data/personas.json` and passes only the selected DJ's name, bio,
-`agent_instructions`, and `speaking_voice` directly in the agent's prompt. The agent does not receive
-the full personas file. The selected DJ ID remains in the run context for traceability.
+Deterministic setup reads `personas.json` from the resources directory and passes the selected
+`Persona` model (ID, name, bio, `agent_instructions`, and `speaking_voice`) in the prompt.
+The agent does not receive the full personas file. The selected DJ ID remains in the run context for traceability.
 
 The run context is prepared by deterministic code from the input services and DJ roll.
 It preserves the actual date represented by each reading, including stale 311 data. Keep
@@ -104,141 +110,199 @@ the daily files already contain the relevant track history.
 | --- | --- |
 | File reading and search (`Read`, `Grep`, `Glob`) | Use the Claude Agent SDK's capabilities to inspect the run's fixed input snapshot. |
 | Spotify search | Accept a query, including title and artist filters, and call `SpotifyService.search_tracks()`. Return canonical Spotify IDs, URLs, titles, artists, albums, and durations so the agent can distinguish recordings and versions. Retain results in run state for validation and include each selected track's URL in the daily output. A nonempty result list alone does not establish a match. |
-| Playlist validation | Accept a proposed daily playlist and check exactly 10 tracks in positions 1–10; five catalog selections and five verified wildcards with consistent flags; no duplicate tracks or primary artists; no tracks played in the preceding 30 days; catalog membership; wildcard IDs and metadata against retained search results; required fields, Spotify URLs, canonical metadata, and mood ranges. Return `valid` and violations with stable codes, affected positions where applicable, and actionable messages. |
+| Playlist validation | Accept a proposed daily playlist and check exactly 10 tracks in positions 1–10; five catalog selections and five verified wildcards with consistent flags; no duplicate tracks or primary artists; no tracks played in the preceding 30 days; catalog membership; wildcard IDs and metadata against retained search results; required fields, Spotify URLs, canonical metadata, creative-title constraints, and input effects. Return `valid` and violations with stable codes, affected positions where applicable, and actionable messages. |
 
 `PlaylistValidator(context).validate_playlist(proposal)` wraps the reusable validation function
 and uses the run's fixed catalog, published history, and retained Spotify search results; the agent cannot override those reference inputs through tool arguments. The agent
 revises invalid selections and validates again before submitting its final output. Subjective
 musical fit remains the agent's responsibility.
 
-Keep validation logic in a reusable Python module. Deterministic code runs the same validation
-again before accepting the final daily file. Spotify playlist creation and publishing remain
-outside the agent loop and are not exposed as agent tools.
+The reusable validator runs during final proposal acceptance and again during host record
+assembly. Mood ranges are checked by `PlaylistMood` during preparation; mood is not supplied
+by the proposal. Spotify playlist creation and publishing remain outside the agent loop and
+are not exposed as agent tools.
 
-## Expected output
+## Proposal and daily record contracts
 
-### Daily playlist file
+The agent receives only `schemas/playlist_proposal.schema.json` and returns structured output;
+it does not write a daily file. `PlaylistProposal` contains only:
 
-We'll publish the daily playlist JSON schema at `schemas/daily_playlist.schema.json` in the
-agent's filesystem so it can consult the required output structure while generating the file.
+- A creative title of 2–4 whitespace-separated words, without a date. The validator rejects
+  titles matching any selected track title after case and whitespace normalization.
+- Spotify description (at most 300 characters) and a nonempty list of liner-note paragraphs.
+- Exactly 10 tracks with positions, Spotify IDs/URLs, titles, canonical artist lists,
+  positive durations, reasons, and wildcard flags.
+- Exactly one effect entry per reading key, with an effect string and weight in `[0, 1]` or null.
 
-The agent loop's output is `data/days/YYYY-MM-DD.json`, written before any Spotify playlist
-is created. It contains everything required to publish the playlist and display the day:
+The system prompt requests empty effects and null weights for skipped or unusable stale inputs.
+The validator permits null or zero weights for those inputs, but requires empty effects.
+DJ-roll weight must always be null. Other subjective freshness weighting and musical fit remain
+agent judgment.
 
-- Playlist name (`title`), Spotify description, and liner notes as a list of paragraphs.
-- The selected DJ ID and run date.
-- Exactly 10 ordered tracks, each with a verified Spotify ID and URL, title, artist, duration,
-  one-line reason, and `wildcard` flag. Positions run from 1 through 10.
-- Playlist mood: `tempo_bpm` (60–160), `energy`, `brightness`, and `obscurity` (each 0–10).
-- An effect line and optional weight for each input, grounded in its reading and status.
-  Skipped inputs must not be presented as having influenced the selections.
+`assemble_daily_record()` reruns the shared validator and attaches trusted date, DJ, mood,
+readings, archived prompt, model, generation timestamp, and initial pending publication state.
+The host prefixes the title as `YYYY-MM-DD — <creative title>` and derives the display artist
+from the canonical artist list. The agent cannot change the separately scored mood.
 
-The file uses the existing `Day` fields from `src/the_bot_radio/web/models.py` as its starting
-point, with publication state and description added. The strict generation schema supports a
-generated day without a Spotify playlist ID; legacy website models remain compatible:
+`DailyRecord` is the strict generation contract in `generation/models.py`; the website's
+`Day` model remains more permissive for legacy records. The strict model enforces mood
+ranges, track count/order, the 5/5 flag split, unique IDs and primary artists, and consistent
+track URLs/display credits. Context-dependent checks against catalog, history, and Spotify
+search evidence remain in `generation/validation.py`.
 
-| Field | Content |
-| --- | --- |
-| `date`, `dj` | Run date and selected persona ID |
-| `title` | Name to use when creating the Spotify playlist |
-| `description` | Description to use when creating the Spotify playlist |
-| `liner_notes` | Liner-note paragraphs for the website |
-| `inputs` | Display readings with effect, weight, status, and raw payload |
-| `mood` | Tempo, energy, brightness, and obscurity scores |
-| `tracks` | The 10 verified tracks in their intended playback order; Spotify URIs can be derived from their IDs |
-| `publication_status` | `pending` when generation completes; managed by deterministic publishing code afterward |
-| `spotify_playlist_id` | `null` until deterministic publishing code records the ID returned by Spotify |
-| `prompt`, `model` | Generation prompt and model identifier |
-| `generated_at` | Timezone-aware generation timestamp |
+`write_schemas()` can export both proposal and daily schemas, but preparation writes only
+the proposal schema into the agent workspace. The pending record exists in memory between
+assembly and publication; normal generation does not persist a pending canonical daily file.
 
-Python validates the file against the selection rules and canonical track metadata before
-it is accepted as the loop's completed output. Track count, mood ranges, and musical rules
-must be enforced explicitly; the current `Day` schema does not enforce them.
+## Execution and SDK configuration
 
-### Deterministic publishing outside the loop
+`PlaylistAgent` owns one `ClaudeSDKClient` session and one `query()` per invocation.
+The agent may revise after tool feedback within that task. The host never sends a repair
+prompt after final output fails validation.
 
-A separate publisher reads the validated daily file, creates the Spotify playlist using
-`title` and `description`, and adds the tracks in position order. Visibility and other
-publishing settings come from deterministic job configuration.
+1. **Prepare:** copy and validate the catalog, load the previous 30 days, require at least
+   five eligible catalog primary artists, roll the DJ, collect readings, and score mood with
+   `ClaudeService`. Archive full readings in diagnostics. The prompt excludes reading raw
+   payloads/errors and reduces the DJ-roll data to the selected persona ID; other residents
+   and roll candidates are not exposed in that prompt.
+2. **Configure:** `_build_options()` sets the workspace, model, system prompt, proposal JSON
+   schema, turn limit, and budget. Built-in tools are exactly `Read`, `Grep`, and `Glob`.
+   The in-process MCP server registers search and validation. `StructuredOutput` is also
+   permitted for the SDK's structured response.
+3. **Constrain access:** options use `permission_mode="dontAsk"`, `setting_sources=[]`, and
+   `strict_mcp_config=True`. A `PreToolUse` filesystem guard allows only the intended tools,
+   restricts read/search paths to the workspace, and rejects symlinks and escaping glob
+   patterns. `cwd` alone is not the boundary. There are no shell, write, publishing,
+   recommendation, or live audio-feature tools.
+4. **Stream:** `_receive_response()` sends the prompt and logs SDK messages. It deduplicates
+   assistant message IDs within the invocation and interrupts if their count exceeds the
+   turn limit. The session, response processing, and client cleanup are inside an
+   `asyncio.timeout()` deadline.
+5. **Accept:** `_process_response()` records the terminal result's usage and requires a
+   successful, non-error result with structured output. Refusals and explicit API-error or
+   aborted terminal reasons fail. Schema-valid output is captured as `proposal.json` before
+   checking final budget/turn usage and playlist rules, so rule-invalid or over-budget
+   proposals can be retained. Failed SDK results and schema-invalid output are not captured.
+6. **Validate again:** the agent uses its injected `PlaylistValidator` for tool feedback and
+   final acceptance. The daily job calls `assemble_daily_record()` for an independent
+   mandatory check before publication. A frozen `PlaylistAgentResult` carries the accepted
+   proposal and archived system/user prompt.
 
-The publisher records the returned Spotify playlist ID and publication status in the daily
-file. The website should display only published days, so a pending file is not mistaken for
-a playable playlist. The website filters pending days while keeping legacy fixture rendering compatible.
+Spotify search accepts a trimmed query of 1–500 characters, a limit of 1–10 (default 10),
+and an offset of 0–1000. Requests are serialized with a per-tool-instance lock. Results include
+album metadata as well as IDs, URLs, titles, artist lists, and durations; successful canonical
+results are retained by ID in `validator.context.search_results`. Final proposals do not have
+an album field. Tool failures return sanitized errors and emit outcome events.
 
-Play history is updated only after successful publication. The agent transcript and verified
-wildcard promotions are supporting artifacts; their formats, enrichment, and publication
-recovery behavior remain to be specified.
+Defaults are 40 agent turns, a $5 estimated agent budget, and a 600-second agent-session
+deadline. These limits exclude preparation, standalone mood scoring, and publication. Mood
+usage is recorded separately. Tests inject a fake Anthropic client for mood scoring and an
+`agent_client_factory` for SDK orchestration; the daily job can also receive a test agent.
 
-## Implementation Details
+## Publication and canonical saving
 
-Use the Python `claude-agent-sdk` package to run one agent task per generation invocation. Keep SDK
-orchestration and the playlist system prompt in `generation/agent.py` (`PlaylistAgent`).
-`ClaudeService` owns standalone Anthropic requests such as mood scoring.
+`generate_day()` automatically calls `publish_playlist()` after shared validation, in both
+local and S3 storage modes. The CLI is `uv run the-bot-radio-generate`; it is not a generation-only
+or dry-run command. Publication always requests a public Spotify playlist.
 
-1. **Prepare:** deterministic setup collects readings, selects the DJ, loads published
-   history, and creates the fixed input snapshot and schema file. Put only the selected
-   persona in the prompt. Initially keep `score_mood()` as a separate call and include its
-   result in the run context.
-2. **Configure:** use one `ClaudeSDKClient` session and one query for the daily task,
-   retaining the same evidence and tool state throughout it. Set the working directory, model, prompt,
-   maximum turns, and cost budget. Explicitly select `Read`, `Grep`, and `Glob` as built-in
-   tools and register the two custom tools. `allowed_tools` controls automatic approval,
-   not tool availability; configure permissions and file access explicitly because `cwd`
-   alone does not isolate the filesystem.
-3. **Wire tools:** define Spotify search and playlist validation with `@tool` and register
-   them through `create_sdk_mcp_server()`. This is in-process MCP, with no hosted endpoint
-   required. Search wraps `SpotifyService`; both tools share run state containing the fixed
-   reference inputs and canonical search results.
-4. **Run:** the agent reads evidence, chooses tracks, verifies wildcards, and calls validation.
-   It uses returned violations to revise and revalidate its proposal within the run limits.
-5. **Accept:** pass the generated schema through SDK `output_format` and obtain
-   `ResultMessage.structured_output`. Treat missing structured output or an unsuccessful
-   result as failure before capturing any proposal. Capture schema-valid output in
-   `proposal.json`, then enforce resource limits and playlist rules. Return the accepted
-   proposal with the archived system prompt and initial user message. The daily job supplies
-   trusted run metadata once and validates the assembled record using the same Python validator
-   exposed by the tool.
-   Schema validation does not replace checks against catalog and history.
-6. **Save:** only after validation passes, Python atomically writes the daily JSON with
-   publication status `pending`. If final validation fails, fail without a follow-up query or
-   a daily file. Retain schema-valid rejected proposals for inspection, record validation failures in the
-   transcript, and mark the run as failed in diagnostics.
-   Spotify publication remains a separate deterministic step.
+The deterministic publisher:
 
-Use the validation tool for feedback during generation and the mandatory Python check for
-enforcement before saving. A `PreToolUse` hook could reject an agent `Write` operation, but
-cannot intercept the host Python write. Since the agent returns structured output and has
-no file-writing tool, a write-validation hook is unnecessary. The final check also catches
-changes made after a successful validation tool call.
+1. Records the requested name, description, public visibility, and ordered IDs in
+   `publication.json`, then checkpoints artifacts before creation.
+2. Creates the playlist and checkpoints its returned ID/URL before adding tracks.
+3. Inserts all ten tracks in order, then reads the playlist back and checks identity, name,
+   public visibility, exact ordered IDs, item count when supplied, and a nonempty snapshot ID.
+4. Returns a published `DailyRecord` with playlist ID/URL, snapshot ID, public flag, and
+   timezone-aware publication timestamp.
 
-Proposed module responsibilities:
+The host serializes that published record once, writes it into local staging, and checkpoints
+its identical bytes beneath `runs/<date>/<run-id>/<date>.json` before replacing the canonical
+`days/<date>.json`. Local writes are atomic; S3 uses the corresponding bucket/prefix keys.
+Every invocation generates afresh, even if that date already exists. One generation job at a
+time is assumed; there is no generation lock.
+
+Publication failures preserve previous canonical daily bytes and retain any created Spotify
+playlist. Mutations are not automatically retried, resumed, deleted, or rolled back. Known
+identity and progress remain in publication artifacts/diagnostics. A later archive failure can
+also leave a published Spotify playlist without a new canonical daily record.
+
+If canonical replacement raises ambiguously, the job reads once with a five-second timeout
+and compares exact bytes; it does not retry replacement. Diagnostics record whether output
+committed. Cancellation still propagates, and finalization can report an error after a
+successful commit; recovery notes distinguish these outcomes.
+
+Only strict records explicitly marked published enter future repeat history. Missing and
+excluded dates are recorded as incomplete coverage; malformed JSON or invalid published
+history fails preparation rather than silently shrinking history. Original history bytes are
+copied into the workspace. Website loading excludes pending records while retaining legacy
+fixture compatibility.
+
+## Storage and run artifacts
+
+The CLI selects local storage by default. `BOT_RADIO_S3_BUCKET` enables S3 and
+`BOT_RADIO_S3_PREFIX` scopes its keys. `BOT_RADIO_RUN_DIR` can override the S3 staging root;
+otherwise staging defaults to `<data-dir>/.run-staging` in either mode. Resources remain
+packaged in `src/the_bot_radio/resources/`, independent of output storage.
+
+Each run uses `<local-work-root>/<date>/<run-id>/`:
+
+```text
+workspace/                          # agent-readable fixed snapshot
+  catalog.jsonl
+  history/YYYY-MM-DD.json
+  schemas/playlist_proposal.schema.json
+proposal.json                       # successful SDK result, schema-valid proposal
+search_results.json                 # retained canonical search evidence
+publication.json                    # publication progress and known Spotify identity
+transcript.jsonl                    # SDK messages, tool events, usage, outcome
+diagnostics.json                    # raw inputs, mood usage, outcome, recovery metadata
+YYYY-MM-DD.json                     # validated published output, if reached
+```
+
+Artifacts are created as their stages are reached, so failed runs may have only a subset.
+`RunRecorder` keeps local staging, redacts secrets, periodically checkpoints transcript and
+diagnostics, and performs full checkpoints at lifecycle boundaries. Archived destinations are
+`<data-dir>/runs/<date>/<run-id>/` locally or `<prefix>/runs/<date>/<run-id>/` in S3. Local staging
+must be separate from the artifact destination. Host artifacts outside `workspace/` are not
+agent-readable. The initial context is supplied in the prompt, not a separate workspace file.
+
+`recover_run_artifacts()` reuploads retained evidence under the original run identity. It
+never calls Spotify, regenerates a proposal, or replaces canonical daily data. Discoveries are
+not automatically promoted into the shared catalog; catalog enrichment remains offline work.
+
+## Module responsibilities
+
+Paths are relative to `src/the_bot_radio/`.
 
 | Module | Responsibility |
 | --- | --- |
-| `generation/daily.py` | Prepare the run, invoke the agent, assemble and validate the record once with trusted metadata, and save it |
-| `generation/agent.py` | `PlaylistAgent`, playlist system prompt, SDK options and streaming, single-result usage and validation, and frozen `PlaylistAgentResult` carrying the proposal and archived prompt |
-| `generation/models.py` | Pydantic proposal/output models and generated JSON schema |
-| `generation/validation.py` | Reusable deterministic checks, `PlaylistValidator` binding those checks to a run context, and mandatory validation during host record assembly |
-| `generation/tools.py` | SDK tool adapters and shared run state |
-| `services/claude_service.py` | Standalone Anthropic requests and their prompts, including mood scoring |
-| `services/spotify_service.py` | Spotify API requests used by search and the separate publisher |
+| `generation/daily.py` | CLI and orchestration: prepare, invoke, assemble, publish, archive, commit, and finalize |
+| `generation/preparation.py` | Catalog/history snapshots, DJ selection, readings, fixed mood, prompt, and proposal schema |
+| `generation/agent.py` | System prompt, SDK options/session, streamed response handling, usage/limits, and final proposal acceptance |
+| `generation/models.py` | Strict proposal/daily contracts, validation context, and schema exports |
+| `generation/validation.py` | Shared checks, bound `PlaylistValidator`, and host record assembly |
+| `generation/tools.py` | In-process MCP search/validation tools and canonical search evidence |
+| `generation/publication.py` | Checkpointed public Spotify creation, insertion, and verification |
+| `generation/runtime.py` | Limits, filesystem guard, redacted diagnostics/transcript, recorder, and artifact recovery |
+| `generation/config.py` | Storage selection and client/store lifetime |
+| `generation/storage.py`, `generation/s3_storage.py` | Daily-byte and run-artifact store interfaces/backends |
+| `services/claude_service.py` | Standalone Anthropic requests, including mood scoring |
+| `services/spotify_service.py` | All Spotify Web API calls used by tools and publication |
 
-Paths are relative to `src/the_bot_radio/`. Test validation independently, tool adapters with
-fake dependencies, and orchestration with simulated SDK results before running live generation.
+## Validation coverage and qualification
 
-Construct `PlaylistValidator` with the prepared validation context, then inject it through
-`PlaylistAgent(spotify_service, validator)`. The agent uses the same validator for tool feedback
-and final proposal checks; `run()` no longer takes a context argument. Spotify search retains
-evidence in the validator's context. The daily job accepts a separate injectable `playlist_agent`
-and retains mandatory host-side validation in `assemble_daily_record()`. Tests may also inject
-an `agent_client_factory`. Keep `run()` responsible for options, the deadline, client lifetime,
-and returning the result. `_build_options()` configures
-tools, permissions, the filesystem guard, structured output, and SDK limits.
-`_receive_response()` sends the initial prompt, logs messages, enforces streamed turn limits,
-and collects the terminal result. `_process_response()` records usage, checks SDK success,
-captures schema-valid proposals, and enforces limits and selection rules. Counters and streamed
-message IDs stay local to each invocation. Timeout cleanup follows the SDK client context;
-no conversation-state class, follow-up prompt, or cross-response accounting is needed.
+The original harness phases are implemented. Offline tests in `tests/generation/` cover
+preparation and history boundaries, proposal validation, tool evidence, fake SDK streams,
+permissions, limits, rejected-output retention, publication checkpoints/readback, local/S3
+archival and replacement, cancellation, and artifact recovery. Async tests use anyio; HTTP
+mocks use respx; SDK tests inject fake clients.
+
+The earlier qualification recorded on 2026-10-27 produced a pending ten-track record in
+15 turns at approximately $0.45, excluding mood scoring, without creating a Spotify playlist.
+That describes the earlier harness, not the current CLI publication behavior. The current
+opt-in `test_live_generation_writes_a_temporary_day_with_mocked_publication` uses real
+inputs/agent/search but mocks publication and asserts a published record; it does not create
+a real Spotify playlist. Live tests require `RUN_LIVE=1`; S3 qualification is separately gated.
 
 SDK references: [Python API](https://code.claude.com/docs/en/agent-sdk/python),
 [custom tools](https://code.claude.com/docs/en/agent-sdk/custom-tools),
@@ -246,57 +310,35 @@ SDK references: [Python API](https://code.claude.com/docs/en/agent-sdk/python),
 [permissions](https://code.claude.com/docs/en/agent-sdk/permissions), and
 [hooks](https://code.claude.com/docs/en/agent-sdk/hooks).
 
-## Development Plan
+## Reccobeats tools
 
-Build incrementally. Each phase must pass its validation gate before dependent phases begin.
-Spotify publishing and deployment remain separate work.
+Implemented service and collector portion:
 
-| Phase | Build | Validate before completion | Dependencies / parallel work |
-| --- | --- | --- | --- |
-| **1. Output contract** | Define Pydantic proposal and daily-record models; generate the filesystem schema. Support track URLs and pending publication. Update website loading to exclude pending days while retaining existing fixture compatibility. | Round-trip a valid 10-track record; reject invalid structure and mood ranges; confirm pending days stay off the website and existing published pages still render. | First phase; establishes interfaces for subsequent work. |
-| **2A. Run preparation** | Assemble a fixed catalog/history snapshot, neighborhood context, separate mood score, and selected-persona prompt. Record history coverage and preserve reading freshness. | With fixtures, verify the 30-day boundaries, published-only history, skipped/stale inputs, and exposure of only the selected persona. | After Phase 1; parallel with **2B and 2C**. |
-| **2B. Deterministic validator** | Implement reusable checks against catalog, history, and verified search results, returning structured violations. | Cover valid output, incorrect count/split, duplicate tracks/primary artists, recent repeats, unknown IDs, metadata mismatches, and missing fields. | After Phase 1; parallel with **2A and 2C**. |
-| **2C. Spotify search adapter** | Wrap the existing service, return canonical metadata and URLs, and retain results in per-run state. | Mock matches, alternate versions, empty results, API failures, and isolation between runs. Confirm search makes no playlist changes. | After Phase 1; parallel with **2A and 2B**. |
-| **3. SDK harness** | Add the Claude Agent SDK; register search and validation through in-process MCP. Configure read/search tools, permissions, structured output, transcript capture, turn limits, and budget. | Exercise adapters with fake dependencies and orchestration with simulated SDK events. Confirm validation feedback reaches the agent, required tools are exposed, and writes/publishing are unavailable. | Requires **2A–2C**. |
-| **4. Final acceptance and saving** | Parse and capture schema-valid output from a successful SDK result, enforce limits and playlist rules, attach trusted metadata once, rerun validation, and atomically save pending daily JSON. Invalid final output fails after one query. | Cover changed output after successful tool validation, rejected proposal retention, malformed or missing output, exhausted limits, SDK errors, timeout cleanup, independent repeated runs, and interrupted saving. Failures must not replace an accepted daily file. | After Phase 3. |
-| **5. End-to-end qualification** | Add a local generation command and run the complete harness against a real catalog and published history. | Run offline integration tests first, then an opt-in live generation. Verify 10 tracks, the 5/5 split, wildcard search evidence, exclusion rules, metadata, transcript, and schema conformance. Confirm no Spotify playlist is created. | After Phase 4. |
+- Added `services/reccobeats_service.py` with the injected `ReccobeatsService`, exposing
+  `get_audio_features()` for `GET /v1/audio-features` and `get_recommendation()` for
+  `GET /v1/track/recommendation`. The typed recommendation contract validates provider
+  controls, rejects unknown fields, and uses an empty `negativeSeeds` list (omitted from
+  the HTTP query). Responses
+  preserve provider envelopes and rows; recommendations return track metadata.
+- Replaced the script-local `ReccoBeatsClient` in `scripts/collect_song_features.py` with
+  the shared service, retaining collector batches of 20, feature-row interpretation,
+  request pacing, bounded retries, both `Retry-After` forms, and catalog/cache behavior.
+  No API key is required; numeric provider rate limits are unpublished. Offline service
+  and collector tests cover transport, validation, row isolation, caching, and recovery.
 
-Phases **2A–2C** should agree on shared interfaces from Phase 1 before parallel implementation.
-Merge their work and run the combined checks before starting Phase 3.
+Planned for later implementation:
 
-Use anyio for async tests, respx for mocked HTTP, and fake SDK dependencies for offline tests.
-Run relevant tests and Ruff at each phase; run the full offline suite before live qualification.
-Real personas and a populated catalog are prerequisites for assessing musical quality.
-
-
-### Implementation status and qualification
-
-Phases 1–5 are implemented, with offline integration coverage and an opt-in live
-qualification test. Live qualification passed on 2026-10-27: the real catalog and selected
-resident produced a pending 10-track record after Spotify search and validation feedback.
-The agent used 15 turns and an estimated $0.45, excluding separate mood scoring; no Spotify
-playlist was created. Initial history was incomplete and recorded as such. Generation uses strict proposal and daily-record models, separate generated
-schemas, and a host-owned atomic write. The validator checks primary artists only and requires
-wildcards to be outside the catalog. Explicitly published strict daily records form repeat history;
-legacy fixtures remain visible on the website but are excluded from generation history.
-
-The CLI is `uv run the-bot-radio-generate`. Defaults are 40 agent turns, a $5 estimated agent
-budget, and a 600-second agent-session deadline for a single generation task. Mood scoring
-is separate; its model/token usage is recorded independently. Record the single SDK result's
-cost and turn count directly; streamed assistant message IDs are deduplicated per invocation
-for turn-limit enforcement. The agent may revise after tool feedback during its task, but
-the host never sends a repair prompt after final validation fails.
-Inputs and schemas are snapshotted under `data/runs/<date>/<run-id>/workspace/`; host-only `proposal.json`,
-`transcript.jsonl`, `diagnostics.json`, `search_results.json`, and validated final
-`<date>.json` remain outside that readable
-workspace. Diagnostics combines raw inputs, mood usage, and the run outcome. The workspace
-contains `catalog.jsonl`, `history/`, and `schemas/`; run context is supplied in the initial prompt.
-There is no setup directory
-or copied personas file. The annotated full layout is documented at the top of
-`src/the_bot_radio/generation/daily.py`.
-
-The agent workspace contains only the proposal schema. The full daily schema remains
-a host-side contract and is not supplied to the agent.
-Python supplies date, DJ, mood, readings, prompt, model, timestamp, and publication state.
-The file-access hook restricts reads/searches to the snapshot; playlist validation remains a tool
-plus a mandatory host check. No playlist-writing or Spotify-publishing tool is exposed.
+- Inject the service through daily orchestration and `PlaylistAgent` into `PlaylistTools`.
+  Add bounded `get_audio_features` and `get_recommendation` tool adapters, register both
+  with the in-process MCP server, and update SDK allowed tools and the filesystem guard's
+  tool allowlist. Return sanitized failures and record tool outcomes in the transcript.
+- Update `PLAYLIST_SYSTEM_PROMPT` to explain both tools: look up features when evaluating
+  candidates or musical transitions, and request recommendations around suitable seeds
+  when exploring discoveries. Keep Spotify search available and require its canonical
+  evidence before selecting recommended discoveries. Preserve the five-catalog/five-discovery
+  split, recent-play exclusions, primary-artist uniqueness, and mandatory validation.
+- Treat missing features, empty recommendations, and provider failures as recoverable tool
+  outcomes so the agent can continue with catalog evidence and Spotify search. Daily tool
+  lookups do not automatically update the shared catalog.
+- Cover tool registration/permissions, agent dependency injection, and unchanged acceptance
+  rules with offline tests before opt-in live qualification.
