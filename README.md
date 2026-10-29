@@ -63,7 +63,7 @@ five from the catalog and five verified discoveries outside it. Primary artists 
 and track IDs from explicitly published playlists in the preceding 30 days are excluded.
 Featured artists may recur. Legacy fixtures and pending generations do not count as history.
 
-Every invocation creates a fresh Spotify playlist and writes `data/days/YYYY-MM-DD.json`
+By default, each invocation creates a fresh Spotify playlist and writes `data/days/YYYY-MM-DD.json`
 with `publication_status: "published"`, its Spotify ID and canonical URL, the final snapshot ID,
 visibility, and a timezone-aware publication timestamp. The generated title contains 2–4 words
 and cannot copy a selected track title. Both the daily title and Spotify name are
@@ -71,10 +71,10 @@ and cannot copy a selected track title. Both the daily title and Spotify name ar
 
 Publication checkpoints validated evidence, creates a public playlist, checkpoints its identity,
 adds all ten tracks in order, and verifies its name, public visibility, and complete contents.
-All runs create public playlists, including development and local-file runs; delete test playlists
+Normal runs create public playlists, including development and local-file runs; delete test playlists
 manually when finished. The daily file is replaced only after publication, validation, and archival, including
 when the previous file is malformed. Generation, Spotify, verification, or precommit archive
-failures preserve previous daily bytes. There is no publication, overwrite, or skip flag.
+failures preserve previous daily bytes. There is no overwrite or skip-existing flag.
 Existing pending files are not backfilled; the next generation creates a fresh publication.
 Run one generation job at a time; orchestration does not acquire a lock.
 
@@ -87,6 +87,21 @@ uv run the-bot-radio-generate --verbose
 Events stream to stderr with the same credential redaction as `transcript.jsonl`;
 stdout still prints the output path.
 
+To generate and validate a preview without publishing or saving it:
+
+```bash
+uv run the-bot-radio-generate --dry-run --data-dir /path/to/local/data
+```
+
+Dry-run mode prints the full validated daily record as indented JSON to stderr and leaves
+stdout empty. The record has `publication_status: "pending"` and no Spotify publication metadata.
+It reads history only from `--data-dir/days/`, ignores the S3 bucket, prefix, and staging
+environment settings, and makes no AWS requests. It does not create a Spotify playlist or
+write a canonical daily record. Its workspace, transcript, diagnostics, and any recorder
+snapshots are temporary and removed after success, failure, or cancellation. Add `--verbose`
+to stream redacted progress events to stderr before the final JSON. Live input, Claude,
+Spotify search, and optional ReccoBeats requests still run; normal API costs apply.
+
 Date precedence is `--date`, then `RUN_DATE`, then today in New York. Historical dates affect
 calendar and prediction inputs; weather, train, and bike feeds remain live observations.
 Missing history is recorded explicitly, so an initial run can proceed without prior playlists.
@@ -97,7 +112,7 @@ invalid final output fails without a host repair prompt. Override with `--max-tu
 `--deadline-seconds`, and `--model`. Budget estimates can overshoot; mood scoring is separate
 and uses the existing service model. The deadline covers the agent session, not input setup.
 
-Each invocation, including failed runs, retains working files under
+Each normal invocation, including failed runs, retains working files under
 `data/.run-staging/YYYY-MM-DD/<run-id>/` and checkpoints artifact snapshots to
 `data/runs/YYYY-MM-DD/<run-id>/`. Successful Spotify publication stages the validated
 `YYYY-MM-DD.json` and checkpoints it before writing identical bytes to `days/`; each run

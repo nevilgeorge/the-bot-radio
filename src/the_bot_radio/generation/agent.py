@@ -36,7 +36,7 @@ The user message contains the selected persona under "persona" and run context u
 run date, timestamp, timezone,
 selected DJ ID, input readings, mood based on input readings, and history coverage.
 Your workspace contains:
-- catalog.jsonl: the shared catalog with canonical track metadata, including audio features.
+- catalog.jsonl: the shared catalog with canonical track metadata and audio features.
 - history/: published playlists from the preceding thirty days.
 - schemas/playlist_proposal.schema.json: the required structure for your final proposal.
 Read any of these files and use grep/glob. Do not write to them.

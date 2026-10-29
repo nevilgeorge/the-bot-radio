@@ -205,8 +205,21 @@ usage is recorded separately. Tests inject a fake Anthropic client for mood scor
 ## Publication and canonical saving
 
 `generate_day()` automatically calls `publish_playlist()` after shared validation, in both
-local and S3 storage modes. The CLI is `uv run the-bot-radio-generate`; it is not a generation-only
-or dry-run command. Publication always requests a public Spotify playlist.
+local and S3 storage modes. The CLI is `uv run the-bot-radio-generate`; its default mode
+publishes a public Spotify playlist.
+
+`--dry-run` instead uses `preview_day()` to run the shared preparation, agent invocation,
+and host validation stages, then prints the complete unpublished `DailyRecord` as indented
+JSON to stderr. Stdout is empty. The record remains `publication_status="pending"` with
+publication metadata unset; Spotify publication and canonical daily-record writes are skipped.
+History comes only from local `--data-dir/days/`, so recent-play exclusions and DJ selection
+use that local history. Missing history retains the normal incomplete-coverage behavior.
+The preview ignores S3 bucket, prefix, and staging environment settings and constructs no
+AWS client. Its workspace, transcript, diagnostics, and any recorder snapshots live under a
+temporary directory that is removed on success, failure, or cancellation; errors do not
+advertise retained artifacts or recovery locations. `--verbose` also streams redacted events
+to stderr before the final JSON. Live input services, Claude, Spotify search, and optional
+ReccoBeats requests still run with normal API costs and the configured generation limits.
 
 The deterministic publisher:
 
@@ -242,7 +255,7 @@ fixture compatibility.
 
 ## Storage and run artifacts
 
-The CLI selects local storage by default. `BOT_RADIO_S3_BUCKET` enables S3 and
+For normal generation, the CLI selects local storage by default. `BOT_RADIO_S3_BUCKET` enables S3 and
 `BOT_RADIO_S3_PREFIX` scopes its keys. `BOT_RADIO_RUN_DIR` can override the S3 staging root;
 otherwise staging defaults to `<data-dir>/.run-staging` in either mode. Resources remain
 packaged in `src/the_bot_radio/resources/`, independent of output storage.
