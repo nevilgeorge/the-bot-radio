@@ -154,6 +154,8 @@ def filesystem_guard(workspace: Path) -> Callable[..., Any]:
         "StructuredOutput",
         "mcp__playlist__search_tracks",
         "mcp__playlist__validate_playlist",
+        "mcp__playlist__get_audio_features",
+        "mcp__playlist__get_recommendation",
     }
 
     async def guard(

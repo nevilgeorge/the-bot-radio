@@ -5,7 +5,7 @@ The agent returns a structured creative proposal for an ordered, 10-track playli
 Greenpoint, Brooklyn inputs and the selected resident DJ's taste. The same generation job
 validates the proposal, publishes and verifies a public Spotify playlist outside the agent
 session, archives the published daily record, and replaces the canonical daily record.
-ReccoBeats recommendations are not currently part of the harness.
+Optional ReccoBeats tools support candidate research without changing playlist acceptance rules.
 
 ## Expected inputs
 
@@ -48,8 +48,9 @@ historical conditions.
   descriptors where available. The DJ's taste guides selection from this shared pool;
   separate persona crate files are not required for this version.
 - Compact descriptors on their source scales, such as ReccoBeats tempo, energy, valence,
-  and danceability. Missing descriptors remain missing. Fetching new descriptors belongs
-  to offline catalog preparation, outside the daily run.
+  and danceability. Optional live feature lookups can supplement research during the daily
+  run; persisting descriptors remains offline catalog preparation. Missing descriptors
+  remain missing.
 - Play history covering the preceding 30 days, across all DJs, to exclude recently played
   tracks. This history must contain real published tracks rather than the website fixtures.
 - Spotify search results for proposed open-catalog wildcards, including canonical metadata
@@ -110,6 +111,8 @@ the daily files already contain the relevant track history.
 | --- | --- |
 | File reading and search (`Read`, `Grep`, `Glob`) | Use the Claude Agent SDK's capabilities to inspect the run's fixed input snapshot. |
 | Spotify search | Accept a query, including title and artist filters, and call `SpotifyService.search_tracks()`. Return canonical Spotify IDs, URLs, titles, artists, albums, and durations so the agent can distinguish recordings and versions. Retain results in run state for validation and include each selected track's URL in the daily output. A nonempty result list alone does not establish a match. |
+| ReccoBeats audio features | Optionally look up 1–40 Spotify or ReccoBeats track IDs to evaluate candidates and musical transitions. Return provider feature rows and metadata unchanged; partial or missing coverage is successful. |
+| ReccoBeats recommendations | Optionally explore recordings around 1–5 suitable seeds, with feature targets and weighting controls. Return provider track metadata unchanged, defaulting to 10 results with a 20-result agent cap. Verify recommended discoveries through Spotify search before selecting them. |
 | Playlist validation | Accept a proposed daily playlist and check exactly 10 tracks in positions 1–10; five catalog selections and five verified wildcards with consistent flags; no duplicate tracks or primary artists; no tracks played in the preceding 30 days; catalog membership; wildcard IDs and metadata against retained search results; required fields, Spotify URLs, canonical metadata, creative-title constraints, and input effects. Return `valid` and violations with stable codes, affected positions where applicable, and actionable messages. |
 
 `PlaylistValidator(context).validate_playlist(proposal)` wraps the reusable validation function
@@ -167,13 +170,13 @@ prompt after final output fails validation.
    and roll candidates are not exposed in that prompt.
 2. **Configure:** `_build_options()` sets the workspace, model, system prompt, proposal JSON
    schema, turn limit, and budget. Built-in tools are exactly `Read`, `Grep`, and `Glob`.
-   The in-process MCP server registers search and validation. `StructuredOutput` is also
-   permitted for the SDK's structured response.
+   The in-process MCP server registers Spotify search, ReccoBeats audio features and
+   recommendations, and playlist validation. `StructuredOutput` is also permitted for the
+   SDK's structured response.
 3. **Constrain access:** options use `permission_mode="dontAsk"`, `setting_sources=[]`, and
    `strict_mcp_config=True`. A `PreToolUse` filesystem guard allows only the intended tools,
    restricts read/search paths to the workspace, and rejects symlinks and escaping glob
-   patterns. `cwd` alone is not the boundary. There are no shell, write, publishing,
-   recommendation, or live audio-feature tools.
+   patterns. `cwd` alone is not the boundary. There are no shell, write, or publishing tools.
 4. **Stream:** `_receive_response()` sends the prompt and logs SDK messages. It deduplicates
    assistant message IDs within the invocation and interrupts if their count exceeds the
    turn limit. The session, response processing, and client cleanup are inside an
@@ -281,7 +284,7 @@ Paths are relative to `src/the_bot_radio/`.
 | `generation/agent.py` | System prompt, SDK options/session, streamed response handling, usage/limits, and final proposal acceptance |
 | `generation/models.py` | Strict proposal/daily contracts, validation context, and schema exports |
 | `generation/validation.py` | Shared checks, bound `PlaylistValidator`, and host record assembly |
-| `generation/tools.py` | In-process MCP search/validation tools and canonical search evidence |
+| `generation/tools.py` | In-process MCP search, ReccoBeats research, and validation tools; canonical Spotify search evidence |
 | `generation/publication.py` | Checkpointed public Spotify creation, insertion, and verification |
 | `generation/runtime.py` | Limits, filesystem guard, redacted diagnostics/transcript, recorder, and artifact recovery |
 | `generation/config.py` | Storage selection and client/store lifetime |
@@ -326,19 +329,39 @@ Implemented service and collector portion:
   No API key is required; numeric provider rate limits are unpublished. Offline service
   and collector tests cover transport, validation, row isolation, caching, and recovery.
 
-Planned for later implementation:
+Implemented harness integration:
 
-- Inject the service through daily orchestration and `PlaylistAgent` into `PlaylistTools`.
-  Add bounded `get_audio_features` and `get_recommendation` tool adapters, register both
-  with the in-process MCP server, and update SDK allowed tools and the filesystem guard's
-  tool allowlist. Return sanitized failures and record tool outcomes in the transcript.
-- Update `PLAYLIST_SYSTEM_PROMPT` to explain both tools: look up features when evaluating
-  candidates or musical transitions, and request recommendations around suitable seeds
-  when exploring discoveries. Keep Spotify search available and require its canonical
-  evidence before selecting recommended discoveries. Preserve the five-catalog/five-discovery
-  split, recent-play exclusions, primary-artist uniqueness, and mandatory validation.
-- Treat missing features, empty recommendations, and provider failures as recoverable tool
-  outcomes so the agent can continue with catalog evidence and Spotify search. Daily tool
-  lookups do not automatically update the shared catalog.
-- Cover tool registration/permissions, agent dependency injection, and unchanged acceptance
-  rules with offline tests before opt-in live qualification.
+- Daily orchestration injects one service per run, using its shared HTTP client unless a
+  test service is supplied. `PlaylistAgent`, `PlaylistTools`, and `build_tool_server` require
+  this dependency. Both tools are registered in the `playlist` MCP server and allowed by
+  SDK options and the filesystem guard. The adapters reuse service pacing, retries, and
+  cooldown without an additional lock or retry loop.
+- Tool definitions describe behavior, inputs, and outputs; `PLAYLIST_SYSTEM_PROMPT` explains
+  when and how to use each tool toward a coherent, verified set. It guides optional feature
+  research for candidates and transitions, and recommendations around suitable seeds. Recommendations
+  supply track metadata; feature lookups supply audio features. Recommended discoveries
+  still require canonical Spotify search evidence. The five-catalog/five-discovery split,
+  thirty-day exclusions, unique primary artists, and mandatory tool and host validation
+  remain unchanged.
+- Partial or missing features, empty recommendations, and provider failures are recoverable
+  outcomes: continue with catalog evidence and Spotify search. Research tools preserve
+  provider envelopes and never modify catalog files, descriptors, or validator search
+  evidence. Failures are sanitized; cancellation propagates.
+- Offline tests cover adapter contracts, registration and schema limits, permissions,
+  dependency propagation, failure recovery in a fake SDK session, and unchanged acceptance
+  rules. Live qualification remains opt-in and must mock Spotify publication.
+
+`get_audio_features` accepts only `ids`, containing 1–40 nonempty track IDs without commas.
+`get_recommendation` reuses `RecommendationRequest`, including all seed and feature-control
+validation and the `featureWeight`/`feature_weight` aliases, with a strict integer `size`
+of 1–20 (default 10). Unknown fields and negative seeds are unavailable. The shared service
+retains its 100-result capability for other callers. MCP input schemas are generated from
+the same argument models used for validation before delegation.
+
+Invalid arguments return MCP errors `invalid_audio_features_arguments` or
+`invalid_recommendation_arguments`; provider and unexpected failures return
+`audio_features_failed` or `recommendation_failed` without exception details, URLs, or
+response bodies. Each invocation records a `reccobeats_audio_features` or
+`reccobeats_recommendation` transcript outcome with status `invalid_arguments`, `error`,
+`empty`, or `ok`; successful calls include the returned row count. No new credentials,
+environment settings, cache, deployment, or publication behavior is introduced.

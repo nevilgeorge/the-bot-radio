@@ -37,6 +37,7 @@ from the_bot_radio.generation.validation import PlaylistValidator, assemble_dail
 from the_bot_radio.resources import RESOURCE_DIR
 from the_bot_radio.services.claude_service import MODEL, ClaudeService
 from the_bot_radio.services.inputs.base import TZ, make_http_client
+from the_bot_radio.services.reccobeats_service import ReccobeatsService
 from the_bot_radio.services.spotify_service import SpotifyService
 from the_bot_radio.web.config import DATA_DIR
 
@@ -55,6 +56,7 @@ async def generate_day(
     # Provided by tests only.
     claude_service: ClaudeService | None = None,
     spotify_service: SpotifyService | None = None,
+    reccobeats_service: ReccobeatsService | None = None,
     playlist_agent: PlaylistAgent | None = None,
 ) -> str:
     """Generate fresh output, archive validated bytes, and replace the canonical day."""
@@ -114,6 +116,7 @@ async def generate_day(
         async with make_http_client() as http_client:
             claude_service = claude_service or ClaudeService()
             spotify_service = spotify_service or SpotifyService(http_client)
+            reccobeats_service = reccobeats_service or ReccobeatsService(http_client)
             prepared = await prepare_run(
                 local_run_dir,
                 run_date,
@@ -127,7 +130,9 @@ async def generate_day(
             recorder.append({"event": "prepared", "mood": prepared.context.mood})
             await recorder.checkpoint()
             playlist_agent = playlist_agent or PlaylistAgent(
-                spotify_service, PlaylistValidator(prepared.context)
+                spotify_service,
+                PlaylistValidator(prepared.context),
+                reccobeats_service=reccobeats_service,
             )
             phase = "agent"
             result = await playlist_agent.run(

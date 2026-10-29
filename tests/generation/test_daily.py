@@ -26,6 +26,7 @@ from the_bot_radio.generation.tools import PlaylistTools
 from the_bot_radio.generation.validation import PlaylistValidator, assemble_daily_record
 from the_bot_radio.services.inputs import runner
 from the_bot_radio.services.inputs.base import TZ, Reading
+from the_bot_radio.services.reccobeats_service import ReccobeatsService
 from the_bot_radio.services.spotify_service import SpotifyPlaylist, SpotifyTrack
 from the_bot_radio.web.models import Mood
 from the_bot_radio.web.store import Store
@@ -167,11 +168,20 @@ def generation_services(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Simp
         return prepared_run
 
     monkeypatch.setattr(daily, "prepare_run", capture_prepared_run)
+    reccobeats_service = SimpleNamespace(
+        get_audio_features=AsyncMock(return_value={"content": []}),
+        get_recommendation=AsyncMock(return_value={"content": []}),
+    )
 
     async def run_agent(**kwargs: Any) -> PlaylistAgentResult:
         """Exercise search retention and tool feedback without assembling a daily record."""
         context = prepared_runs[-1].context
-        adapters = PlaylistTools(PlaylistValidator(context), spotify_service, kwargs["event_sink"])
+        adapters = PlaylistTools(
+            PlaylistValidator(context),
+            spotify_service,
+            kwargs["event_sink"],
+            reccobeats_service=reccobeats_service,
+        )
         search_result = await adapters.search_tracks({"query": "fixture songs"})
         assert not search_result["isError"]
         proposal = PlaylistProposal.model_validate(
@@ -198,6 +208,7 @@ def generation_services(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Simp
         data_dir=data_dir,
         claude=claude_service,
         spotify=spotify_service,
+        reccobeats=reccobeats_service,
         agent=SimpleNamespace(run=AsyncMock(side_effect=run_agent)),
         run_agent=run_agent,
         prepared_runs=prepared_runs,
@@ -576,13 +587,18 @@ async def test_host_assembles_once_with_trusted_metadata(generation_services, mo
     assert record.prompt == agent_arguments["prompt"]
 
 
+@pytest.mark.parametrize("inject_reccobeats", [False, True])
 async def test_default_agent_receives_validator_with_prepared_context(
-    generation_services: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+    generation_services: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    inject_reccobeats: bool,
 ) -> None:
-    """Bind agent validation to the same evidence later used by host acceptance."""
+    """Bind the run's validator and shared or injected research service to the agent."""
     services = generation_services
     agent_factory = Mock(return_value=services.agent)
     monkeypatch.setattr(daily, "PlaylistAgent", agent_factory)
+    reccobeats_factory = Mock(wraps=ReccobeatsService)
+    monkeypatch.setattr(daily, "ReccobeatsService", reccobeats_factory)
 
     await daily.generate_day(
         RUN_DATE,
@@ -590,6 +606,7 @@ async def test_default_agent_receives_validator_with_prepared_context(
         now=NOW,
         claude_service=services.claude,
         spotify_service=services.spotify,
+        **({"reccobeats_service": services.reccobeats} if inject_reccobeats else {}),
     )
 
     agent_factory.assert_called_once()
@@ -597,6 +614,15 @@ async def test_default_agent_receives_validator_with_prepared_context(
     assert spotify_service is services.spotify
     assert isinstance(validator, PlaylistValidator)
     assert validator.context is services.prepared_runs[-1].context
+    research_service = agent_factory.call_args.kwargs["reccobeats_service"]
+    if inject_reccobeats:
+        assert research_service is services.reccobeats
+        reccobeats_factory.assert_not_called()
+    else:
+        reccobeats_factory.assert_called_once()
+        assert isinstance(research_service, ReccobeatsService)
+        assert research_service.http_client is reccobeats_factory.call_args.args[0]
+        assert research_service.http_client.is_closed
 
 
 @pytest.mark.parametrize("use_cli_date", [True, False])
