@@ -22,6 +22,7 @@ from the_bot_radio.generation.agent import (
 from the_bot_radio.generation.models import PlaylistProposal
 from the_bot_radio.generation.runtime import AgentLimits, LogTranscript, filesystem_guard
 from the_bot_radio.generation.validation import PlaylistValidator
+from the_bot_radio.services.reccobeats_service import ReccobeatsService
 from the_bot_radio.services.spotify_service import SpotifyService
 
 pytestmark = pytest.mark.anyio
@@ -93,7 +94,10 @@ async def run_agent(
         return client
 
     agent = PlaylistAgent(
-        AsyncMock(spec=SpotifyService), PlaylistValidator(context), agent_client_factory=factory
+        AsyncMock(spec=SpotifyService),
+        PlaylistValidator(context),
+        reccobeats_service=AsyncMock(spec=ReccobeatsService),
+        agent_client_factory=factory,
     )
     result = await agent.run(
         workspace=workspace,
@@ -131,6 +135,8 @@ async def test_success_returns_proposal_and_prompt_with_exact_tools_and_schema(
         "StructuredOutput",
         "mcp__playlist__search_tracks",
         "mcp__playlist__validate_playlist",
+        "mcp__playlist__get_audio_features",
+        "mcp__playlist__get_recommendation",
     }
     assert options.permission_mode == "dontAsk"
     assert options.setting_sources == []
@@ -312,6 +318,7 @@ async def test_repeated_runs_have_independent_streamed_turn_ids_and_usage(tmp_pa
     agent = PlaylistAgent(
         AsyncMock(spec=SpotifyService),
         PlaylistValidator(context),
+        reccobeats_service=AsyncMock(spec=ReccobeatsService),
         agent_client_factory=lambda **kwargs: next(pending_clients),
     )
     events: list[dict[str, Any]] = []
@@ -428,9 +435,11 @@ async def test_guard_allows_internal_output_but_denies_mutating_tools(tmp_path: 
         "StructuredOutput",
         "mcp__playlist__search_tracks",
         "mcp__playlist__validate_playlist",
+        "mcp__playlist__get_audio_features",
+        "mcp__playlist__get_recommendation",
     ]:
         assert await guard({"tool_name": tool}, None, None) == {}
-    for tool in ["Bash", "Write", "Edit", "Agent", "mcp__other__search"]:
+    for tool in ["Bash", "Write", "Edit", "Agent", "mcp__other__search", "mcp__playlist__delete"]:
         decision = await guard({"tool_name": tool}, None, None)
         assert decision["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert (await guard({"tool_name": "Read", "tool_input": []}, None, None))["hookSpecificOutput"][
@@ -454,3 +463,87 @@ def test_transcript_redacts_environment_credentials_and_normalizes_sdk_messages(
     assert lines[1]["message"]["session_id"] == "test-session"
     assert secret not in path.read_text()
     assert console.getvalue() == path.read_text()
+
+
+async def test_recommendations_need_search_evidence_and_feature_failure_allows_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Research tools propagate injected dependencies without changing discovery acceptance."""
+    proposal, context = make_inputs()
+    discovery_id = proposal["tracks"][5]["spotify_id"]
+    canonical_track = context.search_results.pop(discovery_id)
+    spotify_service = AsyncMock(spec=SpotifyService)
+    spotify_service.search_tracks.return_value = [canonical_track]
+    reccobeats_service = AsyncMock(spec=ReccobeatsService)
+    reccobeats_service.get_recommendation.return_value = {
+        "content": [
+            {
+                "id": "reccobeats-id",
+                "href": f"https://open.spotify.com/track/{discovery_id}",
+                "trackTitle": canonical_track.name,
+            }
+        ]
+    }
+    reccobeats_service.get_audio_features.side_effect = RuntimeError("private provider URL")
+    registered_tools: dict[str, Any] = {}
+    events: list[dict[str, Any]] = []
+
+    def create_server(**arguments: Any) -> dict[str, Any]:
+        """Keep the actual registered adapters available to the fake SDK flow."""
+        registered_tools.update({tool.name: tool for tool in arguments["tools"]})
+        return {"type": "sdk", "name": arguments["name"], "instance": object()}
+
+    monkeypatch.setattr(tools, "create_sdk_mcp_server", create_server)
+
+    class ResearchingAgentClient(FakeAgentClient):
+        """Try optional research, then obtain authoritative Spotify evidence."""
+
+        async def receive_response(self) -> AsyncIterator[Any]:
+            """Reject a recommendation until search verifies its canonical recording."""
+            recommendation = await registered_tools["get_recommendation"].handler(
+                {"seeds": [proposal["tracks"][0]["spotify_id"]]}
+            )
+            assert not recommendation["isError"]
+            assert discovery_id not in context.search_results
+            features = await registered_tools["get_audio_features"].handler({"ids": [discovery_id]})
+            assert features["isError"]
+            assert "private provider URL" not in json.dumps(features)
+            invalid_result = await registered_tools["validate_playlist"].handler(
+                {"proposal": proposal}
+            )
+            invalid_payload = json.loads(invalid_result["content"][0]["text"])
+            assert not invalid_payload["valid"]
+            assert {violation["code"] for violation in invalid_payload["violations"]} == {
+                "unverified_wildcard"
+            }
+            await registered_tools["search_tracks"].handler({"query": "Song 6 Artist 6"})
+            valid_result = await registered_tools["validate_playlist"].handler(
+                {"proposal": proposal}
+            )
+            assert json.loads(valid_result["content"][0]["text"])["valid"]
+            yield sdk_result(proposal)
+
+    client = ResearchingAgentClient([[]])
+    agent = PlaylistAgent(
+        spotify_service,
+        PlaylistValidator(context),
+        reccobeats_service=reccobeats_service,
+        agent_client_factory=lambda **kwargs: client,
+    )
+    result = await agent.run(workspace=tmp_path, prompt="Select tracks", event_sink=events.append)
+    assert result.proposal == PlaylistProposal.model_validate(proposal)
+    reccobeats_service.get_recommendation.assert_awaited_once()
+    recommendation_request = reccobeats_service.get_recommendation.await_args.args[0]
+    assert recommendation_request.seeds == (proposal["tracks"][0]["spotify_id"],)
+    assert recommendation_request.size == 10
+    reccobeats_service.get_audio_features.assert_awaited_once()
+    spotify_service.search_tracks.assert_awaited_once_with("Song 6 Artist 6", limit=10, offset=0)
+    assert [
+        event["status"] for event in events if event["event"] == "reccobeats_audio_features"
+    ] == ["error"]
+    assert [event["valid"] for event in events if event["event"] == "playlist_validation"] == [
+        False,
+        True,
+    ]
+    assert any(event["event"] == "final_validation" and event["valid"] for event in events)
+    assert len(client.prompts) == 1

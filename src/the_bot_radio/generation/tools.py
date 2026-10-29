@@ -16,6 +16,7 @@ from the_bot_radio.generation.models import (
 )
 from the_bot_radio.generation.runtime import EventSink
 from the_bot_radio.generation.validation import PlaylistValidator
+from the_bot_radio.services.reccobeats_service import ReccobeatsService, RecommendationRequest
 from the_bot_radio.services.spotify_service import SpotifyService
 
 
@@ -25,6 +26,20 @@ class SearchArguments(GenerationModel):
     query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
     limit: int = Field(default=10, ge=1, le=10)
     offset: int = Field(default=0, ge=0, le=1000)
+
+
+class AudioFeaturesArguments(GenerationModel):
+    """Bound feature lookups to one provider batch without accepting host state."""
+
+    ids: list[Annotated[str, StringConstraints(min_length=1, pattern=r"^[^,]+$")]] = Field(
+        min_length=1, max_length=40
+    )
+
+
+class RecommendationArguments(RecommendationRequest):
+    """Retain provider controls while bounding the agent's research workload."""
+
+    size: int = Field(default=10, ge=1, le=20, strict=True)
 
 
 def _tool_result(payload: dict[str, Any], *, is_error: bool = False) -> dict[str, Any]:
@@ -43,10 +58,13 @@ class PlaylistTools:
         validator: PlaylistValidator,
         spotify_service: SpotifyService,
         event_sink: EventSink | None = None,
+        *,
+        reccobeats_service: ReccobeatsService,
     ) -> None:
         """Capture host-owned state instead of exposing it as tool arguments."""
         self.validator = validator
         self.spotify_service = spotify_service
+        self.reccobeats_service = reccobeats_service
         self.event_sink = event_sink
         self.search_lock = asyncio.Lock()
 
@@ -99,6 +117,44 @@ class PlaylistTools:
         self._emit({"event": "spotify_search", "status": "ok", "track_ids": [t.id for t in tracks]})
         return _tool_result(payload)
 
+    async def get_audio_features(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Return optional provider features without establishing selection evidence."""
+        event_name = "reccobeats_audio_features"
+        try:
+            feature_arguments = AudioFeaturesArguments.model_validate(arguments)
+        except ValidationError:
+            self._emit({"event": event_name, "status": "invalid_arguments"})
+            return _tool_result({"error": "invalid_audio_features_arguments"}, is_error=True)
+        try:
+            envelope = await self.reccobeats_service.get_audio_features(feature_arguments.ids)
+            row_count = len(envelope["content"])
+        except Exception:
+            self._emit({"event": event_name, "status": "error"})
+            return _tool_result({"error": "audio_features_failed"}, is_error=True)
+        self._emit(
+            {"event": event_name, "status": "ok" if row_count else "empty", "row_count": row_count}
+        )
+        return _tool_result(envelope)
+
+    async def get_recommendation(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Return optional discovery metadata without changing canonical search evidence."""
+        event_name = "reccobeats_recommendation"
+        try:
+            recommendation_arguments = RecommendationArguments.model_validate(arguments)
+        except ValidationError:
+            self._emit({"event": event_name, "status": "invalid_arguments"})
+            return _tool_result({"error": "invalid_recommendation_arguments"}, is_error=True)
+        try:
+            envelope = await self.reccobeats_service.get_recommendation(recommendation_arguments)
+            row_count = len(envelope["content"])
+        except Exception:
+            self._emit({"event": event_name, "status": "error"})
+            return _tool_result({"error": "recommendation_failed"}, is_error=True)
+        self._emit(
+            {"event": event_name, "status": "ok" if row_count else "empty", "row_count": row_count}
+        )
+        return _tool_result(envelope)
+
     async def validate_playlist(self, arguments: dict[str, Any]) -> dict[str, Any]:
         """Return actionable violations using fixed run evidence and search results."""
         if set(arguments) != {"proposal"}:
@@ -119,13 +175,19 @@ def build_tool_server(
     validator: PlaylistValidator,
     spotify_service: SpotifyService,
     event_sink: EventSink | None = None,
+    *,
+    reccobeats_service: ReccobeatsService,
 ) -> McpSdkServerConfig:
-    """Register the two callable tools in an SDK MCP server within the host process."""
-    adapters = PlaylistTools(validator, spotify_service, event_sink)
+    """Register the four callable tools in an SDK MCP server within the host process."""
+    adapters = PlaylistTools(
+        validator, spotify_service, event_sink, reccobeats_service=reccobeats_service
+    )
     search_tool = tool(
         "search_tracks",
-        "Search Spotify for recordings; select the correct title, artists, and version. "
-        "Results provide canonical metadata and are retained for playlist validation.",
+        "Search Spotify recordings by query, with optional limit (default 10, maximum 10) and "
+        "offset. Returns tracks with Spotify IDs, URLs, titles, artists, albums, and durations. "
+        "Successful results are retained as canonical evidence for playlist validation. "
+        "Invalid arguments or provider failures return an error with isError=true.",
         SearchArguments.model_json_schema(),
     )(adapters.search_tracks)
     proposal_schema = PlaylistProposal.model_json_schema()
@@ -139,8 +201,29 @@ def build_tool_server(
     }
     validation_tool = tool(
         "validate_playlist",
-        "Check the proposed playlist against the catalog, recent published history, "
-        "and verified search results. Fix violations and validate again before finishing.",
+        "Validate a proposal against playlist rules, the fixed catalog, recent published history, "
+        "and retained Spotify search results. Accepts only the proposal field. Returns valid and "
+        "a list of violations with codes, messages, and affected positions or fields "
+        "where applicable.",
         validation_schema,
     )(adapters.validate_playlist)
-    return create_sdk_mcp_server(name="playlist", tools=[search_tool, validation_tool])
+    features_tool = tool(
+        "get_audio_features",
+        "Look up ReccoBeats audio features for ids: 1–40 nonempty track IDs without commas. "
+        "Returns acousticness, danceability, energy, instrumentalness, key, liveness, loudness, "
+        "mode, speechiness, tempo, and valence for covered tracks.",
+        AudioFeaturesArguments.model_json_schema(),
+    )(adapters.get_audio_features)
+    recommendation_tool = tool(
+        "get_recommendation",
+        "Request ReccoBeats recommendations from 1–5 seed track IDs. "
+        "Optional controls target acousticness, danceability, energy, instrumentalness, liveness, "
+        "speechiness, valence, key, mode, loudness, tempo, popularity, and featureWeight. "
+        "Returns the provider envelope with track metadata, not audio features. "
+        "Does not update the catalog or validation evidence. "
+        "Invalid arguments or provider failures return an error with isError=true.",
+        RecommendationArguments.model_json_schema(),
+    )(adapters.get_recommendation)
+    return create_sdk_mcp_server(
+        name="playlist", tools=[search_tool, validation_tool, features_tool, recommendation_tool]
+    )

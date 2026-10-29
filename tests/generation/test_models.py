@@ -17,7 +17,7 @@ from the_bot_radio.generation.models import (
 from the_bot_radio.web.models import Day
 
 SCHEMA_DIRECTORY = Path(__file__).resolve().parents[2] / "schemas"
-REPO_DATA = Path(__file__).resolve().parents[2] / "data"
+LEGACY_DAYS = Path(__file__).resolve().parents[1] / "fixtures" / "days"
 
 
 def daily_record_payload() -> dict[str, Any]:
@@ -240,9 +240,8 @@ def test_record_rejects_duplicate_primary_artists() -> None:
 
 
 def test_legacy_website_fixtures_remain_display_compatible() -> None:
-    # Only the checked-in legacy fixtures belong to this assertion; local generation
-    # also writes modern daily records into this gitignored directory.
-    paths = [REPO_DATA / "days" / f"2026-10-{day:02d}.json" for day in range(15, 27)]
+    # Use checked-in fixtures independently of local generation output.
+    paths = [LEGACY_DAYS / f"2026-10-{day:02d}.json" for day in range(15, 27)]
     for path in paths:
         day = Day.model_validate_json(path.read_text())
         assert day.publication_status is None

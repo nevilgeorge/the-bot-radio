@@ -6,7 +6,6 @@ import json
 import sys
 from datetime import date, datetime
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from zoneinfo import ZoneInfo
 
@@ -164,8 +163,10 @@ async def test_reccobeats_matches_spotify_href_and_handles_missing_records() -> 
         return_value=httpx.Response(200, json=fixture_payload("reccobeats"))
     )
     async with httpx.AsyncClient() as http_client:
-        reccobeats_client = collector.ReccoBeatsClient(http_client, request_interval=0)
-        results = await reccobeats_client.fetch_features([SECOND_TRACK_ID, TRACK_ID], FETCH_DATE)
+        reccobeats_service = collector.ReccobeatsService(http_client, request_interval=0)
+        spotify_ids = [SECOND_TRACK_ID, TRACK_ID]
+        payload = await reccobeats_service.get_audio_features(spotify_ids)
+        results = collector.interpret_audio_features(spotify_ids, payload, FETCH_DATE)
     assert results[SECOND_TRACK_ID] is None
     assert results[TRACK_ID].energy == 0.57
     assert results[TRACK_ID].tempo == 114.033
@@ -185,33 +186,63 @@ async def test_reccobeats_bad_record_does_not_discard_good_record() -> None:
         return_value=httpx.Response(200, json=payload)
     )
     async with httpx.AsyncClient() as http_client:
-        results = await collector.ReccoBeatsClient(http_client, request_interval=0).fetch_features(
-            [TRACK_ID, SECOND_TRACK_ID], FETCH_DATE
-        )
+        spotify_ids = [TRACK_ID, SECOND_TRACK_ID]
+        payload = await collector.ReccobeatsService(
+            http_client, request_interval=0
+        ).get_audio_features(spotify_ids)
+        results = collector.interpret_audio_features(spotify_ids, payload, FETCH_DATE)
     assert results[TRACK_ID].energy == 0
-    assert isinstance(results[SECOND_TRACK_ID], collector.ProviderError)
+    assert isinstance(results[SECOND_TRACK_ID], collector.ReccobeatsError)
+
+
+@pytest.mark.parametrize(
+    "unidentified_row",
+    [
+        None,
+        {"href": None},
+        {"href": "https://[invalid"},
+        {"href": "https://example.com/track/" + SECOND_TRACK_ID},
+        {"href": "https://open.spotify.com/album/" + SECOND_TRACK_ID},
+        {"href": "https://open.spotify.com/track/" + "9" * 22},
+    ],
+)
+def test_unidentified_rows_only_fail_unresolved_tracks(unidentified_row: object) -> None:
+    """Unknown rows cannot turn unresolved IDs into permanently cached missing coverage."""
+    payload = fixture_payload("reccobeats")
+    payload["content"].append(unidentified_row)
+    results = collector.interpret_audio_features([TRACK_ID, SECOND_TRACK_ID], payload, FETCH_DATE)
+    assert results[TRACK_ID].energy == 0.57
+    assert isinstance(results[SECOND_TRACK_ID], collector.ReccobeatsError)
+    assert "unidentified" in str(results[SECOND_TRACK_ID])
 
 
 @respx.mock
-async def test_retry_after_survives_exhaustion_before_next_batch(monkeypatch) -> None:
-    fake_sleep = AsyncMock()
-    monkeypatch.setattr(collector.anyio, "sleep", fake_sleep)
-    monkeypatch.setattr(collector, "time", SimpleNamespace(monotonic=lambda: 100.0))
+@pytest.mark.parametrize("status_code", [401, 403])
+async def test_access_failure_stops_after_checkpoint(tmp_path: Path, status_code: int) -> None:
+    """An access failure saves the failed batch and leaves later batches unattempted."""
+    track_ids = [TRACK_ID] + [str(index).zfill(22) for index in range(1, 21)]
     audio_route = respx.get("https://api.reccobeats.com/v1/audio-features").mock(
-        side_effect=[
-            httpx.Response(429, headers={"Retry-After": "120"}),
-            httpx.Response(429, headers={"Retry-After": "120"}),
-            httpx.Response(429, headers={"Retry-After": "120"}),
-            httpx.Response(200, json=fixture_payload("reccobeats")),
-        ]
+        return_value=httpx.Response(status_code, text="private provider response")
     )
+    spotify_service = AsyncMock()
+    spotify_service.get_playlist.return_value = spotify_playlist(track_ids=track_ids)
     async with httpx.AsyncClient() as http_client:
-        reccobeats_client = collector.ReccoBeatsClient(http_client)
-        with pytest.raises(collector.ProviderError, match="HTTP 429"):
-            await reccobeats_client.fetch_features([TRACK_ID], FETCH_DATE)
-        features = await reccobeats_client.fetch_features([TRACK_ID], FETCH_DATE)
-    assert features[TRACK_ID].energy == 0.57 and audio_route.call_count == 4
-    assert fake_sleep.await_args_list[-1].args == (120.0,)
+        summary = await collector.collect_catalog(
+            [PLAYLIST_ID],
+            tmp_path,
+            spotify_service,
+            collector.ReccobeatsService(http_client, request_interval=0),
+            now=FETCH_TIME,
+        )
+    records = collector.load_catalog(tmp_path / "shared_catalog.jsonl")
+    assert summary.failures == 20 and audio_route.call_count == 1
+    assert len(records) == 21
+    assert all(
+        records[track_id].lookups["reccobeats"].status == "error" for track_id in track_ids[:20]
+    )
+    assert records[track_ids[-1]].lookups == {}
+    assert "private provider response" not in records[TRACK_ID].lookups["reccobeats"].error
+    assert len(audio_route.calls.last.request.url.params["ids"].split(",")) == 20
 
 
 @respx.mock
@@ -222,13 +253,13 @@ async def test_collection_reuses_cross_playlist_cache_and_merges_provenance(tmp_
     spotify_service = AsyncMock()
     spotify_service.get_playlist.return_value = spotify_playlist(track_ids=[TRACK_ID, TRACK_ID])
     async with httpx.AsyncClient() as http_client:
-        reccobeats_client = collector.ReccoBeatsClient(http_client, request_interval=0)
+        reccobeats_service = collector.ReccobeatsService(http_client, request_interval=0)
         await collector.collect_catalog(
-            [PLAYLIST_ID], tmp_path, spotify_service, reccobeats_client, now=FETCH_TIME
+            [PLAYLIST_ID], tmp_path, spotify_service, reccobeats_service, now=FETCH_TIME
         )
         spotify_service.get_playlist.return_value = spotify_playlist(SECOND_PLAYLIST_ID)
         summary = await collector.collect_catalog(
-            [SECOND_PLAYLIST_ID], tmp_path, spotify_service, reccobeats_client, now=FETCH_TIME
+            [SECOND_PLAYLIST_ID], tmp_path, spotify_service, reccobeats_service, now=FETCH_TIME
         )
         assert summary.failures == 0 and summary.cached == 1
         assert summary.counts["reccobeats.cached"] == 1
@@ -243,7 +274,7 @@ async def test_collection_reuses_cross_playlist_cache_and_merges_provenance(tmp_
             [SECOND_PLAYLIST_ID],
             tmp_path,
             spotify_service,
-            reccobeats_client,
+            reccobeats_service,
             now=FETCH_TIME,
             refresh=True,
         )
@@ -266,7 +297,7 @@ async def test_collection_global_limit_and_failure_checkpoint(tmp_path: Path, mo
             [PLAYLIST_ID, SECOND_PLAYLIST_ID],
             tmp_path,
             spotify_service,
-            collector.ReccoBeatsClient(http_client, request_interval=0),
+            collector.ReccobeatsService(http_client, request_interval=0),
             limit=1,
             now=FETCH_TIME,
         )
@@ -287,9 +318,9 @@ async def test_failed_refresh_preserves_successful_descriptors(tmp_path: Path, m
     spotify_service = AsyncMock()
     spotify_service.get_playlist.return_value = spotify_playlist()
     async with httpx.AsyncClient() as http_client:
-        reccobeats_client = collector.ReccoBeatsClient(http_client, request_interval=0)
+        reccobeats_service = collector.ReccobeatsService(http_client, request_interval=0)
         await collector.collect_catalog(
-            [PLAYLIST_ID], tmp_path, spotify_service, reccobeats_client, now=FETCH_TIME
+            [PLAYLIST_ID], tmp_path, spotify_service, reccobeats_service, now=FETCH_TIME
         )
         before = collector.load_catalog(tmp_path / "shared_catalog.jsonl")[TRACK_ID]
         audio_route.mock(return_value=httpx.Response(503))
@@ -297,7 +328,7 @@ async def test_failed_refresh_preserves_successful_descriptors(tmp_path: Path, m
             [PLAYLIST_ID],
             tmp_path,
             spotify_service,
-            reccobeats_client,
+            reccobeats_service,
             now=FETCH_TIME,
             refresh=True,
         )
@@ -319,21 +350,14 @@ async def test_interrupted_collection_resumes_after_audio_checkpoint(tmp_path: P
     )
     spotify_service = AsyncMock()
     spotify_service.get_playlist.return_value = spotify_playlist(track_ids=track_ids)
-    interrupted_client = AsyncMock()
-    first_batch = {
-        track_id: collector.AudioFeatures(
-            fetched=FETCH_DATE,
-            **{field: payload["content"][0][field] for field in collector.AUDIO_FIELDS},
-        )
-        for track_id in track_ids[:20]
-    }
-    interrupted_client.fetch_features.side_effect = [
-        first_batch,
+    interrupted_service = AsyncMock()
+    interrupted_service.get_audio_features.side_effect = [
+        {"content": payload["content"][:20]},
         RuntimeError("interrupted before second batch"),
     ]
     with pytest.raises(RuntimeError, match="interrupted"):
         await collector.collect_catalog(
-            [PLAYLIST_ID], tmp_path, spotify_service, interrupted_client, now=FETCH_TIME
+            [PLAYLIST_ID], tmp_path, spotify_service, interrupted_service, now=FETCH_TIME
         )
     checkpoint = collector.load_catalog(tmp_path / "shared_catalog.jsonl")
     assert checkpoint[track_ids[0]].descriptors.audio is not None
@@ -343,7 +367,7 @@ async def test_interrupted_collection_resumes_after_audio_checkpoint(tmp_path: P
             [PLAYLIST_ID],
             tmp_path,
             spotify_service,
-            collector.ReccoBeatsClient(http_client, request_interval=0),
+            collector.ReccobeatsService(http_client, request_interval=0),
             now=FETCH_TIME,
         )
     assert audio_route.call_count == 1 and summary.cached == 20
@@ -359,10 +383,10 @@ async def test_no_data_is_cached_without_operational_failure(tmp_path: Path) -> 
     spotify_service = AsyncMock()
     spotify_service.get_playlist.return_value = spotify_playlist()
     async with httpx.AsyncClient() as http_client:
-        reccobeats_client = collector.ReccoBeatsClient(http_client, request_interval=0)
+        reccobeats_service = collector.ReccobeatsService(http_client, request_interval=0)
         for _ in range(2):
             summary = await collector.collect_catalog(
-                [PLAYLIST_ID], tmp_path, spotify_service, reccobeats_client, now=FETCH_TIME
+                [PLAYLIST_ID], tmp_path, spotify_service, reccobeats_service, now=FETCH_TIME
             )
             assert summary.failures == 0
     track = collector.load_catalog(tmp_path / "shared_catalog.jsonl")[TRACK_ID]

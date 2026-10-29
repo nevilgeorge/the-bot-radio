@@ -1,7 +1,7 @@
 """Import Spotify playlists and cache ReccoBeats audio features as JSONL.
 
-Run with a playlist URL/ID or --all-playlists. The ReccoBeats client intentionally lives here;
-this offline collection step is independent of the daily playlist generation pipeline.
+Run with a playlist URL/ID or --all-playlists. Shared provider services supply metadata and
+features; this offline collection step is independent of the daily generation pipeline.
 """
 
 import argparse
@@ -16,7 +16,6 @@ from collections import Counter
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import date, datetime
-from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -33,10 +32,10 @@ from the_bot_radio.catalog import (
     load_catalog,
 )
 from the_bot_radio.resources import RESOURCE_DIR
+from the_bot_radio.services.reccobeats_service import ReccobeatsError, ReccobeatsService
 from the_bot_radio.services.spotify_service import SpotifyError, SpotifyService
 from the_bot_radio.web import config
 
-RECCOBEATS_URL = "https://api.reccobeats.com/v1/audio-features"
 PLAYLISTS_FILENAME = "shared_catalog_playlists.json"
 CATALOG_FILENAME = "shared_catalog.jsonl"
 SPOTIFY_ID_RE = re.compile(r"^[A-Za-z0-9]{22}$")
@@ -61,14 +60,6 @@ class CollectionSummary(BaseModel):
     failures: int = 0
     playlists_failed: int = 0
     counts: dict[str, int] = Field(default_factory=dict)
-
-
-class ProviderError(Exception):
-    """A sanitized provider failure that never includes request URLs or credentials."""
-
-    def __init__(self, message: str, *, credential: bool = False) -> None:
-        super().__init__(message)
-        self.credential = credential
 
 
 def normalize_playlist_id(value: str) -> str:
@@ -146,96 +137,41 @@ def catalog_lock(path: Path) -> Iterator[None]:
             fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
-class ReccoBeatsClient:
-    """Collect audio features by Spotify ID with request pacing and bounded retries."""
-
-    def __init__(self, http_client: httpx.AsyncClient, *, request_interval: float = 1.0) -> None:
-        """Inject transport and optionally disable pacing for HTTP-mocked tests."""
-        self.http_client = http_client
-        self.request_interval = request_interval
-        self.next_request_at = 0.0
-
-    async def request(self, url: str, params: dict[str, str]) -> dict[str, Any]:
-        """Get JSON, retry temporary failures, and expose only sanitized errors."""
-        for attempt in range(3):
-            await anyio.sleep(max(0.0, self.next_request_at - time.monotonic()))
-            self.next_request_at = time.monotonic() + self.request_interval
-            response: httpx.Response | None = None
-            retry_delay = float(2**attempt)
-            try:
-                response = await self.http_client.get(url, params=params)
-            except httpx.TransportError:
-                failure = ProviderError("reccobeats transport error")
-            else:
-                if response.status_code in (401, 403):
-                    raise ProviderError("reccobeats credentials rejected", credential=True)
-                if response.status_code == 404:
-                    return {"content": []}
-                if response.status_code == 429 or response.status_code >= 500:
-                    failure = ProviderError(f"reccobeats HTTP {response.status_code}")
-                else:
-                    if response.is_error:
-                        raise ProviderError(f"reccobeats HTTP {response.status_code}")
-                    try:
-                        payload = response.json()
-                    except ValueError as error:
-                        raise ProviderError("reccobeats returned invalid JSON") from error
-                    if not isinstance(payload, dict):
-                        raise ProviderError("reccobeats returned an invalid response")
-                    return payload
-                retry_after = response.headers.get("Retry-After")
-                if retry_after:
-                    try:
-                        retry_delay = max(0.0, float(retry_after))
-                    except ValueError:
-                        try:
-                            retry_at = parsedate_to_datetime(retry_after)
-                            retry_delay = max(0.0, retry_at.timestamp() - time.time())
-                        except (TypeError, ValueError, OverflowError):
-                            pass
-            self.next_request_at = max(self.next_request_at, time.monotonic() + retry_delay)
-            if attempt == 2:
-                raise failure
-        raise AssertionError("unreachable retry state")
-
-    async def fetch_features(
-        self, spotify_ids: list[str], fetched: date
-    ) -> dict[str, AudioFeatures | None | ProviderError]:
-        """Match unordered batch results by Spotify href, validating records independently."""
-        if not spotify_ids:
-            return {}
-        if len(spotify_ids) > 20:
-            raise ValueError("ReccoBeats requests must contain at most 20 IDs")
-        payload = await self.request(RECCOBEATS_URL, {"ids": ",".join(spotify_ids)})
-        rows = payload.get("content")
-        if not isinstance(rows, list):
-            raise ProviderError("reccobeats returned malformed content")
-        results: dict[str, AudioFeatures | None | ProviderError] = dict.fromkeys(spotify_ids)
-        unidentified = False
-        for row in rows:
-            if not isinstance(row, dict) or not isinstance(row.get("href"), str):
-                unidentified = True
-                continue
+def interpret_audio_features(
+    spotify_ids: list[str], payload: dict[str, Any], fetched: date
+) -> dict[str, AudioFeatures | None | ReccobeatsError]:
+    """Join feature rows by Spotify href and isolate malformed rows from valid coverage."""
+    rows = payload["content"]
+    results: dict[str, AudioFeatures | None | ReccobeatsError] = dict.fromkeys(spotify_ids)
+    unidentified = False
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("href"), str):
+            unidentified = True
+            continue
+        try:
             parsed_url = urlparse(row["href"])
-            path_parts = parsed_url.path.strip("/").split("/")
-            if parsed_url.netloc != "open.spotify.com" or len(path_parts) != 2:
-                unidentified = True
-                continue
-            spotify_id = path_parts[1]
-            if path_parts[0] != "track" or spotify_id not in results:
-                unidentified = True
-                continue
-            try:
-                results[spotify_id] = AudioFeatures(
-                    fetched=fetched, **{field: row[field] for field in AUDIO_FIELDS}
-                )
-            except (KeyError, ValidationError):
-                results[spotify_id] = ProviderError("reccobeats returned invalid audio features")
-        if unidentified:
-            for spotify_id, features in results.items():
-                if features is None:
-                    results[spotify_id] = ProviderError("reccobeats returned unidentified records")
-        return results
+        except ValueError:
+            unidentified = True
+            continue
+        path_parts = parsed_url.path.strip("/").split("/")
+        if parsed_url.netloc != "open.spotify.com" or len(path_parts) != 2:
+            unidentified = True
+            continue
+        spotify_id = path_parts[1]
+        if path_parts[0] != "track" or spotify_id not in results:
+            unidentified = True
+            continue
+        try:
+            results[spotify_id] = AudioFeatures(
+                fetched=fetched, **{field: row[field] for field in AUDIO_FIELDS}
+            )
+        except (KeyError, ValidationError):
+            results[spotify_id] = ReccobeatsError("reccobeats returned invalid audio features")
+    if unidentified:
+        for spotify_id, features in results.items():
+            if features is None:
+                results[spotify_id] = ReccobeatsError("reccobeats returned unidentified records")
+    return results
 
 
 def needs_lookup(track: CatalogTrack, source: str, refresh: bool) -> bool:
@@ -247,12 +183,12 @@ def needs_lookup(track: CatalogTrack, source: str, refresh: bool) -> bool:
 def record_result(
     track: CatalogTrack,
     source: Literal["reccobeats"],
-    result: AudioFeatures | None | ProviderError,
+    result: AudioFeatures | None | ReccobeatsError,
     now: datetime,
     counts: Counter[str],
 ) -> None:
     """Record an attempt, retaining earlier descriptors if a refresh fails."""
-    if isinstance(result, ProviderError):
+    if isinstance(result, ReccobeatsError):
         status = "error"
         track.lookups[source] = LookupState(status=status, attempted_at=now, error=str(result))
     else:
@@ -266,7 +202,7 @@ async def collect_catalog(
     playlist_ids: list[str],
     catalog_dir: Path,
     spotify_service: SpotifyService,
-    reccobeats_client: ReccoBeatsClient,
+    reccobeats_service: ReccobeatsService,
     *,
     limit: int | None = None,
     refresh: bool = False,
@@ -332,16 +268,16 @@ async def collect_catalog(
         for offset in range(0, len(audio_tracks), 20):
             batch = audio_tracks[offset : offset + 20]
             try:
-                results = await reccobeats_client.fetch_features(
-                    [track.spotify_id for track in batch], now.date()
-                )
-            except ProviderError as error:
+                spotify_ids = [track.spotify_id for track in batch]
+                payload = await reccobeats_service.get_audio_features(spotify_ids)
+                results = interpret_audio_features(spotify_ids, payload, now.date())
+            except ReccobeatsError as error:
                 results = {track.spotify_id: error for track in batch}
             for track in batch:
                 record_result(track, "reccobeats", results[track.spotify_id], now, counts)
             save_catalog(catalog_path, records)
             if any(
-                isinstance(result, ProviderError) and result.credential
+                isinstance(result, ReccobeatsError) and result.credential
                 for result in results.values()
             ):
                 break
@@ -389,7 +325,7 @@ async def run_collection(arguments: argparse.Namespace) -> CollectionSummary:
             playlist_ids,
             arguments.catalog_dir,
             SpotifyService(http_client),
-            ReccoBeatsClient(http_client),
+            ReccobeatsService(http_client),
             limit=arguments.limit,
             refresh=arguments.refresh,
         )

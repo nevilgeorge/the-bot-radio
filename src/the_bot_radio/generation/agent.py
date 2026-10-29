@@ -21,6 +21,7 @@ from the_bot_radio.generation.runtime import AgentLimits, EventSink, filesystem_
 from the_bot_radio.generation.tools import build_tool_server
 from the_bot_radio.generation.validation import PlaylistValidator
 from the_bot_radio.services.claude_service import MODEL
+from the_bot_radio.services.reccobeats_service import ReccobeatsService
 from the_bot_radio.services.spotify_service import SpotifyService
 
 PLAYLIST_SYSTEM_PROMPT = """\
@@ -35,22 +36,30 @@ The user message contains the selected persona under "persona" and run context u
 run date, timestamp, timezone,
 selected DJ ID, input readings, mood based on input readings, and history coverage.
 Your workspace contains:
-- catalog.jsonl: the shared catalog with canonical track metadata.
+- catalog.jsonl: the shared catalog with canonical track metadata and audio features.
 - history/: published playlists from the preceding thirty days.
 - schemas/playlist_proposal.schema.json: the required structure for your final proposal.
 Read any of these files and use grep/glob. Do not write to them.
 
-Available MCP tools:
-- mcp__playlist__search_tracks: search Spotify and retain canonical recording metadata as
-  evidence. Use it to verify discoveries before selecting them.
-- mcp__playlist__validate_playlist: check a draft proposal against playlist rules and retained
-  evidence. Fix reported violations and validate again before submitting your final proposal.
+Use the MCP tools to develop and verify your set:
+- mcp__playlist__get_recommendation: when you want to explore discoveries around recordings
+  that suit the persona and today's mood. Choose suitable seeds and adjust song feature targets to
+  explore the musical direction you want.
+- mcp__playlist__get_audio_features: when additional musical evidence would help you compare
+  candidates or plan transitions. Request features for the candidates under consideration.
+- mcp__playlist__search_tracks: before selecting any discovery, including a recommendation.
+  Search by title and artist, compare recordings and versions, and select only a result whose
+  canonical metadata matches your intended recording.
+- mcp__playlist__validate_playlist: once you have a complete draft. Fix reported violations
+  and validate again before submitting your final proposal.
+
+get_recommendation and get_audio_features are optional research aids.
+If data is missing or a tool fails, continue using catalog evidence and Spotify search.
 
 The selected persona's guidance and speaking voice are supplied in the user message.
 Follow the selected persona's musical guidance and speaking voice.
 
 Choose exactly ten tracks: five from the shared catalog and five discoveries absent from it.
-Verify discoveries using Spotify search.
 
 Bounds:
     - Give the playlist a descriptive, creative title of two to four words, counted by whitespace.
@@ -64,7 +73,6 @@ Bounds:
       null weight. Provide exactly one effect entry for every reading key; DJ-roll weight is null.
 
 Develop a coherent musical arc, explaining every selection with specific musical detail.
-Call playlist validation and repair violations before producing your final structured proposal.
 Return only the proposal's creative fields. The host supplies run and publication metadata
 and writes the daily record + playlist.
 """
@@ -86,9 +94,11 @@ class PlaylistAgent:
         spotify_service: SpotifyService,
         validator: PlaylistValidator,
         *,
+        reccobeats_service: ReccobeatsService,
         agent_client_factory: Callable[..., Any] = ClaudeSDKClient,
     ) -> None:
         """Use Spotify evidence tools, a run validator, and an injectable SDK client factory."""
+        self.reccobeats_service = reccobeats_service
         self.spotify_service = spotify_service
         self.validator = validator
         # Factory injection lets tests use a fake client without launching the Agent SDK.
@@ -137,12 +147,19 @@ class PlaylistAgent:
                 "StructuredOutput",
                 "mcp__playlist__search_tracks",
                 "mcp__playlist__validate_playlist",
+                "mcp__playlist__get_audio_features",
+                "mcp__playlist__get_recommendation",
             ],
             permission_mode="dontAsk",
             setting_sources=[],
             strict_mcp_config=True,
             mcp_servers={
-                "playlist": build_tool_server(self.validator, self.spotify_service, event_sink)
+                "playlist": build_tool_server(
+                    self.validator,
+                    self.spotify_service,
+                    event_sink,
+                    reccobeats_service=self.reccobeats_service,
+                )
             },
             hooks={"PreToolUse": [HookMatcher(hooks=[filesystem_guard(workspace)])]},
             output_format={"type": "json_schema", "schema": PlaylistProposal.model_json_schema()},
