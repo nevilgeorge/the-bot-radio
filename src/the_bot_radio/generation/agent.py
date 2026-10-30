@@ -64,8 +64,8 @@ Choose exactly ten tracks: five from the shared catalog and five discoveries abs
 Bounds:
     - Give the playlist a descriptive, creative title of two to six words, counted by whitespace.
       Do not copy any selected track's title, ignoring case and whitespace. Do not include a date;
-      the host adds the run date to the daily title and Spotify playlist name. The title can be creative
-      and not necessarily directly referencing the inputs.
+      the host adds the run date to the daily title and Spotify playlist name. The title can be
+      creative and not necessarily directly referencing the inputs.
     - No Spotify track ID may repeat from the previous thirty days.
     - Primary artists (the first credited artist) must be unique within the set;
       featured collaborators may recur.
